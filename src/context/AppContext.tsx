@@ -27,6 +27,7 @@ interface AppContextType {
   togglePlaySession: (lordId: number) => void;
   stopActiveSession: (turnReached?: number) => void;
   addRun: (lordId: number, run: Partial<CampaignRun>) => void;
+  updateRun: (runId: string, updates: Partial<CampaignRun>) => void;
   deleteRun: (runId: string) => void;
   setLordCustomImage: (lordId: number, url: string) => void;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
@@ -139,7 +140,26 @@ function getInitialState(): any {
         });
       }
     }
-    const finalRuns = Array.from(runsMap.values());
+    const rawRuns = Array.from(runsMap.values());
+    const finalRuns = rawRuns.map(r => {
+      const lordId = Number(r.lordId);
+      const sec = Number(r.totalSeconds) || 0;
+      if (sec === 0) {
+        const lordSessionsTotal = finalSessions
+          .filter(s => Number(s.lordId) === lordId)
+          .reduce((sum, s) => sum + (Number(s.durationSeconds) || 0), 0);
+        if (lordSessionsTotal > 0) {
+          return {
+            ...r,
+            totalSeconds: lordSessionsTotal,
+          };
+        }
+      }
+      return {
+        ...r,
+        totalSeconds: sec,
+      };
+    });
 
     // Active session
     let finalActiveSession = parsedV2?.activeSession || parsedV1?.activeSession || null;
@@ -499,16 +519,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Add a new Run
   const addRun = useCallback((lordId: number, runData: Partial<CampaignRun>) => {
+    const targetId = Number(lordId);
+    const isFinished = runData.status === 'victory' || runData.status === 'defeat';
+
+    // 1. If an active session is running for this lord and the run is completed, stop and commit it
+    let activeDurationToAdd = 0;
+    if (activeSession && Number(activeSession.lordId) === targetId) {
+      const now = Date.now();
+      activeDurationToAdd = Math.max(1, Math.floor((now - activeSession.startedAt) / 1000));
+
+      const newSession: PlaySession = {
+        id: `sess_${now}_${Math.random().toString(36).substring(2, 7)}`,
+        runId: undefined,
+        lordId: targetId,
+        startedAt: activeSession.startedAt,
+        endedAt: now,
+        durationSeconds: activeDurationToAdd,
+        turnReached: runData.finalTurn,
+        autoDetected: !document.hasFocus(),
+      };
+
+      if (isFinished) {
+        setActiveSession(null);
+      }
+      setSessions(prev => [newSession, ...prev]);
+    }
+
+    // 2. Determine totalSeconds: auto-calculate from unallocated sessions if not provided
+    let computedSeconds = Number(runData.totalSeconds);
+    if (!computedSeconds || computedSeconds <= 0) {
+      const allocated = runs
+        .filter(r => Number(r.lordId) === targetId)
+        .reduce((sum, r) => sum + (Number(r.totalSeconds) || 0), 0);
+      const lordSessionSec = sessions
+        .filter(s => Number(s.lordId) === targetId)
+        .reduce((sum, s) => sum + (Number(s.durationSeconds) || 0), 0);
+      const totalAvailable = lordSessionSec + activeDurationToAdd;
+      const unallocated = totalAvailable - allocated;
+      computedSeconds = unallocated > 0 ? unallocated : totalAvailable;
+    }
+
     const newRun: CampaignRun = {
       id: `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      lordId,
+      lordId: targetId,
       status: runData.status || 'in_progress',
       difficulty: runData.difficulty || 'Normal',
       finalTurn: runData.finalTurn || 0,
       startDate: runData.startDate || new Date().toISOString(),
-      endDate: runData.status === 'victory' || runData.status === 'defeat' ? new Date().toISOString() : undefined,
+      endDate: isFinished ? (runData.endDate || new Date().toISOString()) : undefined,
       manualDays: runData.manualDays || 1,
-      totalSeconds: runData.totalSeconds || 0,
+      totalSeconds: Math.max(0, computedSeconds),
       notes: runData.notes || '',
       isBlackBorderEligible: runData.isBlackBorderEligible || false,
       createdAt: Date.now(),
@@ -519,10 +579,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // If victory, auto-grant Short Victory medal if not yet granted
     if (newRun.status === 'victory') {
       setLordsProgress(prev => {
-        const cur = prev[lordId] || { short: false, long: false, crisis: false, black: false };
+        const cur = prev[targetId] || { short: false, long: false, crisis: false, black: false };
         return {
           ...prev,
-          [lordId]: {
+          [targetId]: {
             ...cur,
             short: true,
             black: newRun.isBlackBorderEligible ? true : cur.black,
@@ -530,6 +590,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       });
     }
+  }, [activeSession, runs, sessions]);
+
+  const updateRun = useCallback((runId: string, updates: Partial<CampaignRun>) => {
+    setRuns(prev =>
+      prev.map(r => {
+        if (r.id !== runId) return r;
+        const updated = { ...r, ...updates };
+        if (updates.status === 'victory') {
+          setLordsProgress(lp => {
+            const cur = lp[r.lordId] || { short: false, long: false, crisis: false, black: false };
+            return {
+              ...lp,
+              [r.lordId]: {
+                ...cur,
+                short: true,
+                black: updates.isBlackBorderEligible !== undefined ? updates.isBlackBorderEligible : cur.black,
+              },
+            };
+          });
+        }
+        return updated;
+      })
+    );
   }, []);
 
   const deleteRun = useCallback((runId: string) => {
@@ -556,15 +639,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getLordTotalSeconds = useCallback(
     (lordId: number): number => {
       const targetId = Number(lordId);
-      let total = sessions
+      let sessionTotal = sessions
         .filter(s => Number(s.lordId) === targetId)
         .reduce((sum, s) => sum + (Number(s.durationSeconds) || 0), 0);
       if (activeSession && Number(activeSession.lordId) === targetId) {
-        total += activeSeconds;
+        sessionTotal += activeSeconds;
       }
-      return total;
+      const runsTotal = runs
+        .filter(r => Number(r.lordId) === targetId)
+        .reduce((sum, r) => sum + (Number(r.totalSeconds) || 0), 0);
+      return Math.max(sessionTotal, runsTotal);
     },
-    [sessions, activeSession, activeSeconds]
+    [sessions, activeSession, activeSeconds, runs]
   );
 
   const getLordActiveRun = useCallback(
@@ -640,6 +726,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         togglePlaySession,
         stopActiveSession,
         addRun,
+        updateRun,
         deleteRun,
         setLordCustomImage,
         updateSettings,

@@ -51,15 +51,16 @@ export const Dashboard: React.FC = () => {
       });
 
       runs.forEach(r => {
+        const lordSec = r.totalSeconds || getLordTotalSeconds(r.lordId);
         if (r.status === 'victory') {
           v++;
-          victorySecondsTotal += r.totalSeconds || 0;
+          victorySecondsTotal += lordSec;
         } else if (r.status === 'defeat') {
           d++;
         }
         if (r.finalTurn && r.finalTurn > 0) {
           totalTurnsCount += r.finalTurn;
-          totalTurnsSeconds += r.totalSeconds || 0;
+          totalTurnsSeconds += lordSec;
         }
       });
 
@@ -74,7 +75,7 @@ export const Dashboard: React.FC = () => {
         avgHoursPerVictory: avgHoursVic,
         avgMinutesPerTurn: avgMinTurn,
       };
-    }, [lordsProgress, runs]);
+    }, [lordsProgress, runs, getLordTotalSeconds]);
 
   // 2. Hall of Fame Computations
   const hallOfFame = useMemo(() => {
@@ -96,10 +97,15 @@ export const Dashboard: React.FC = () => {
     const nemesisLord = nemesisEntry ? LORDS_DATA.find(l => l.id === parseInt(nemesisEntry[0], 10)) : null;
 
     // D. Blitz Master (Lowest min/turn)
-    const validTurnRuns = runs.filter(r => r.finalTurn > 10 && r.totalSeconds > 60);
+    const validTurnRuns = runs.filter(r => {
+      const sec = r.totalSeconds || getLordTotalSeconds(r.lordId);
+      return r.finalTurn > 10 && sec > 60;
+    });
     const blitzRun = [...validTurnRuns].sort((a, b) => {
-      const minTurnA = (a.totalSeconds / 60) / a.finalTurn;
-      const minTurnB = (b.totalSeconds / 60) / b.finalTurn;
+      const secA = a.totalSeconds || getLordTotalSeconds(a.lordId);
+      const secB = b.totalSeconds || getLordTotalSeconds(b.lordId);
+      const minTurnA = (secA / 60) / a.finalTurn;
+      const minTurnB = (secB / 60) / b.finalTurn;
       return minTurnA - minTurnB;
     })[0];
     const blitzLord = blitzRun ? LORDS_DATA.find(l => l.id === blitzRun.lordId) : null;
@@ -114,7 +120,7 @@ export const Dashboard: React.FC = () => {
       blitzLord,
       blitzRun,
     };
-  }, [runs]);
+  }, [runs, getLordTotalSeconds]);
 
   // 3. Era & Wave Breakdown
   const eraStats = useMemo(() => {
@@ -291,7 +297,9 @@ export const Dashboard: React.FC = () => {
                 <div className="text-xs text-[#9494a8] mt-0.5">{hallOfFame.fastestLord.faction}</div>
                 <div className="text-sm font-bold text-emerald-400 mt-2">
                   Turno {hallOfFame.fastestTurnRun?.finalTurn} &middot;{' '}
-                  {formatDurationHuman(hallOfFame.fastestTurnRun?.totalSeconds || 0)}
+                  {formatDurationHuman(
+                    hallOfFame.fastestTurnRun?.totalSeconds || getLordTotalSeconds(hallOfFame.fastestTurnRun?.lordId || 0)
+                  )}
                 </div>
               </div>
             ) : (
@@ -313,7 +321,9 @@ export const Dashboard: React.FC = () => {
                 <div className="text-xs text-[#9494a8] mt-0.5">{hallOfFame.longestLord.faction}</div>
                 <div className="text-sm font-bold text-sky-400 mt-2">
                   Turno {hallOfFame.longestRun?.finalTurn} &middot;{' '}
-                  {formatDurationHuman(hallOfFame.longestRun?.totalSeconds || 0)}
+                  {formatDurationHuman(
+                    hallOfFame.longestRun?.totalSeconds || getLordTotalSeconds(hallOfFame.longestRun?.lordId || 0)
+                  )}
                 </div>
               </div>
             ) : (
@@ -355,7 +365,10 @@ export const Dashboard: React.FC = () => {
                 </div>
                 <div className="text-xs text-[#9494a8] mt-0.5">{hallOfFame.blitzLord.faction}</div>
                 <div className="text-sm font-bold text-purple-400 mt-2">
-                  {calculateMinutesPerTurn(hallOfFame.blitzRun.totalSeconds, hallOfFame.blitzRun.finalTurn)} min / turno
+                  {calculateMinutesPerTurn(
+                    hallOfFame.blitzRun.totalSeconds || getLordTotalSeconds(hallOfFame.blitzRun.lordId),
+                    hallOfFame.blitzRun.finalTurn
+                  )} min / turno
                 </div>
               </div>
             ) : (

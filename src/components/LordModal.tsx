@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, Trophy, Plus, Trash2, Clock, Calendar, CheckCircle2, Skull, Hourglass } from 'lucide-react';
+import { X, ExternalLink, Trophy, Plus, Trash2, Clock, Calendar, CheckCircle2, Skull, Hourglass, Pencil } from 'lucide-react';
 import { Lord, CampaignRun, GameDifficulty, RunStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatHMS, formatDurationHuman, toUtcDateKey } from '../lib/timeUtils';
@@ -18,6 +18,7 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
     sessions,
     toggleMedal,
     addRun,
+    updateRun,
     deleteRun,
     setLordCustomImage,
     getLordTotalSeconds,
@@ -29,6 +30,9 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
   const lordSessions = sessions.filter(s => Number(s.lordId) === Number(lord.id));
   const totalSeconds = getLordTotalSeconds(lord.id);
 
+  const previousRunsSeconds = lordRuns.reduce((sum, r) => sum + (Number(r.totalSeconds) || 0), 0);
+  const unallocatedSeconds = Math.max(0, totalSeconds - previousRunsSeconds) || totalSeconds;
+
   // New Run Form State
   const [status, setStatus] = useState<RunStatus>('victory');
   const [difficulty, setDifficulty] = useState<GameDifficulty>('Very Hard');
@@ -37,6 +41,41 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
   const [isBlackBorderEligible, setIsBlackBorderEligible] = useState<boolean>(true);
   const [notes, setNotes] = useState<string>('');
   const [customImgInput, setCustomImgInput] = useState<string>(progress.customImg || '');
+
+  // Edit Run State
+  const [editingRunId, setEditingRunId] = useState<string | null>(null);
+  const [editTurn, setEditTurn] = useState<number>(0);
+  const [editStatus, setEditStatus] = useState<RunStatus>('victory');
+  const [editDifficulty, setEditDifficulty] = useState<GameDifficulty>('Normal');
+  const [editHours, setEditHours] = useState<number>(0);
+  const [editMinutes, setEditMinutes] = useState<number>(0);
+  const [editBlackBorder, setEditBlackBorder] = useState<boolean>(false);
+  const [editDays, setEditDays] = useState<number>(1);
+
+  const startEditRun = (r: CampaignRun) => {
+    setEditingRunId(r.id);
+    setEditTurn(r.finalTurn || 0);
+    setEditStatus(r.status);
+    setEditDifficulty(r.difficulty);
+    const sec = r.totalSeconds || totalSeconds;
+    setEditHours(Math.floor(sec / 3600));
+    setEditMinutes(Math.floor((sec % 3600) / 60));
+    setEditBlackBorder(!!r.isBlackBorderEligible);
+    setEditDays(r.manualDays || 1);
+  };
+
+  const saveEditRun = (runId: string) => {
+    const newSec = Math.max(0, editHours * 3600 + editMinutes * 60);
+    updateRun(runId, {
+      finalTurn: editTurn,
+      status: editStatus,
+      difficulty: editDifficulty,
+      totalSeconds: newSec,
+      isBlackBorderEligible: editBlackBorder,
+      manualDays: editDays,
+    });
+    setEditingRunId(null);
+  };
 
   const primaryPortrait = progress.customImg || portraitsCache[lord.id] || DEFAULT_PORTRAITS[lord.id] || `./portraits/${lord.id}.webp`;
   const [imgSrc, setImgSrc] = useState<string>(primaryPortrait);
@@ -58,6 +97,7 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
       difficulty,
       finalTurn: parsedTurns,
       manualDays: parsedDays,
+      totalSeconds: unallocatedSeconds,
       isBlackBorderEligible: isBlackBorderEligible,
       notes: notes.trim(),
     });
@@ -295,6 +335,16 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
                 </div>
               </div>
 
+              <div className="flex items-center justify-between bg-[#1b1b24] px-3.5 py-2 rounded-lg border border-[#262633] text-xs">
+                <span className="text-[#9494a8] flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                  Tempo a creditar nesta campanha:
+                </span>
+                <span className="font-bold text-emerald-400 font-mono-numbers">
+                  {formatDurationHuman(unallocatedSeconds)}
+                </span>
+              </div>
+
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <label className="flex items-center gap-2 text-xs font-medium text-purple-300 cursor-pointer">
                   <input
@@ -328,54 +378,179 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
             ) : (
               <div className="space-y-2">
                 {lordRuns.map(r => (
-                  <div
-                    key={r.id}
-                    className="bg-[#13131a] p-3 rounded-xl border border-[#262633] flex items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      {r.status === 'victory' && (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                      )}
-                      {r.status === 'defeat' && (
-                        <Skull className="w-5 h-5 text-rose-400 shrink-0" />
-                      )}
-                      {r.status === 'in_progress' && (
-                        <Hourglass className="w-5 h-5 text-sky-400 shrink-0 animate-spin" />
-                      )}
-
-                      <div>
-                        <div className="text-xs font-bold text-white flex items-center gap-2">
-                          <span>
-                            {r.status === 'victory'
-                              ? 'Vitória'
-                              : r.status === 'defeat'
-                              ? 'Derrota'
-                              : 'Em Andamento'}
-                          </span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1b1b24] text-[#9494a8] border border-[#262633]">
-                            {r.difficulty}
-                          </span>
-                          {r.isBlackBorderEligible && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-800">
-                              🖤 100% Manual
-                            </span>
-                          )}
+                  editingRunId === r.id ? (
+                    <div key={r.id} className="bg-[#181822] p-3.5 rounded-xl border border-[#c9a227]/50 space-y-3">
+                      <div className="flex items-center justify-between text-xs font-bold text-[#c9a227]">
+                        <span>Editar Campanha</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingRunId(null)}
+                          className="text-neutral-400 hover:text-white"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                        <div>
+                          <label className="text-[10px] text-[#9494a8] block mb-1">Resultado</label>
+                          <select
+                            value={editStatus}
+                            onChange={e => setEditStatus(e.target.value as RunStatus)}
+                            className="w-full bg-[#13131a] text-white px-2 py-1.5 rounded border border-[#262633]"
+                          >
+                            <option value="victory">✅ Vitória</option>
+                            <option value="in_progress">⏳ Em Andamento</option>
+                            <option value="defeat">💀 Derrota</option>
+                          </select>
                         </div>
-                        <div className="text-[11px] text-[#9494a8] mt-0.5">
-                          Turno {r.finalTurn || '-'} &middot; {r.manualDays || 1} dia(s) &middot;{' '}
-                          {formatDurationHuman(r.totalSeconds || 0)} jogadas
+                        <div>
+                          <label className="text-[10px] text-[#9494a8] block mb-1">Dificuldade</label>
+                          <select
+                            value={editDifficulty}
+                            onChange={e => setEditDifficulty(e.target.value as GameDifficulty)}
+                            className="w-full bg-[#13131a] text-white px-2 py-1.5 rounded border border-[#262633]"
+                          >
+                            <option value="Normal">Normal</option>
+                            <option value="Hard">Difícil (Hard)</option>
+                            <option value="Very Hard">Muito Difícil (Very Hard)</option>
+                            <option value="Legendary">Lendário (Legendary)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#9494a8] block mb-1">Turno Final</label>
+                          <input
+                            type="number"
+                            value={editTurn}
+                            onChange={e => setEditTurn(parseInt(e.target.value, 10) || 0)}
+                            className="w-full bg-[#13131a] text-white px-2 py-1.5 rounded border border-[#262633]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#9494a8] block mb-1">Dias Corridos</label>
+                          <input
+                            type="number"
+                            value={editDays}
+                            onChange={e => setEditDays(parseInt(e.target.value, 10) || 1)}
+                            className="w-full bg-[#13131a] text-white px-2 py-1.5 rounded border border-[#262633]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="text-[10px] text-[#9494a8] block mb-1">Horas Jogadas</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editHours}
+                            onChange={e => setEditHours(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                            className="w-full bg-[#13131a] text-white px-2 py-1.5 rounded border border-[#262633]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#9494a8] block mb-1">Minutos Jogados</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={editMinutes}
+                            onChange={e => setEditMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                            className="w-full bg-[#13131a] text-white px-2 py-1.5 rounded border border-[#262633]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <label className="flex items-center gap-2 text-xs text-purple-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editBlackBorder}
+                            onChange={e => setEditBlackBorder(e.target.checked)}
+                            className="rounded accent-purple-500"
+                          />
+                          100% Manual (Borda Preta)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingRunId(null)}
+                            className="px-3 py-1 bg-[#1b1b24] hover:bg-[#262633] text-neutral-300 text-xs rounded transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => saveEditRun(r.id)}
+                            className="px-3 py-1 bg-[#c9a227] hover:bg-[#d8b030] text-black font-bold text-xs rounded transition-colors"
+                          >
+                            Salvar Alterações
+                          </button>
                         </div>
                       </div>
                     </div>
-
-                    <button
-                      onClick={() => deleteRun(r.id)}
-                      className="p-1.5 text-neutral-500 hover:text-rose-400 rounded hover:bg-[#1b1b24] transition-colors"
-                      title="Excluir Run"
+                  ) : (
+                    <div
+                      key={r.id}
+                      className="bg-[#13131a] p-3 rounded-xl border border-[#262633] flex items-center justify-between gap-3 hover:border-neutral-700 transition-colors"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                      <div className="flex items-center gap-3">
+                        {r.status === 'victory' && (
+                          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                        )}
+                        {r.status === 'defeat' && (
+                          <Skull className="w-5 h-5 text-rose-400 shrink-0" />
+                        )}
+                        {r.status === 'in_progress' && (
+                          <Hourglass className="w-5 h-5 text-sky-400 shrink-0 animate-spin" />
+                        )}
+
+                        <div>
+                          <div className="text-xs font-bold text-white flex items-center gap-2">
+                            <span>
+                              {r.status === 'victory'
+                                ? 'Vitória'
+                                : r.status === 'defeat'
+                                ? 'Derrota'
+                                : 'Em Andamento'}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1b1b24] text-[#9494a8] border border-[#262633]">
+                              {r.difficulty}
+                            </span>
+                            {r.isBlackBorderEligible && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-800">
+                                🖤 100% Manual
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-[#9494a8] mt-0.5">
+                            Turno {r.finalTurn || '-'} &middot; {r.manualDays || 1} dia(s) &middot;{' '}
+                            <span className="text-emerald-400 font-semibold">
+                              {formatDurationHuman(r.totalSeconds || totalSeconds)} jogadas
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEditRun(r)}
+                          className="p-1.5 text-neutral-400 hover:text-[#c9a227] rounded hover:bg-[#1b1b24] transition-colors"
+                          title="Editar Campanha"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteRun(r.id)}
+                          className="p-1.5 text-neutral-500 hover:text-rose-400 rounded hover:bg-[#1b1b24] transition-colors"
+                          title="Excluir Run"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )
                 ))}
               </div>
             )}
