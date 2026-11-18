@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-root: #070709;
+    --bg-surface: #0e0e12;
+    --bg-card: #13131a;
+    --bg-elevated: #1b1b24;
+    --border-subtle: #262633;
+    --text-main: #f2f2f7;
+    --text-muted: #9494a8;
+    --accent: #c9a227;
+    --bronze: #cd7f32;
+    --silver: #c0c0c0;
+    --gold: #ffd700;
+    --black-glow: #a855f7;
+  }
+
+  body {
+    background-color: var(--bg-root);
+    color: var(--text-main);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+}
+
+/* Custom Total War / Fantasy Heading Font */
+.font-cinzel {
+  font-family: 'Cinzel', serif;
+}
+
+.font-mono-numbers {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* BTD6 Border Classes */
+.border-btd-default {
+  border-color: #262633;
+}
+
+.border-btd-active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.4), inset 0 0 10px rgba(59, 130, 246, 0.2);
+  animation: pulse-active 2.5s infinite ease-in-out;
+}
+
+.border-btd-bronze {
+  border-color: #cd7f32;
+  box-shadow: 0 0 14px rgba(205, 127, 50, 0.35), inset 0 0 8px rgba(205, 127, 50, 0.15);
+}
+
+.border-btd-silver {
+  border-color: #d1d5db;
+  box-shadow: 0 0 16px rgba(209, 213, 219, 0.4), inset 0 0 8px rgba(209, 213, 219, 0.2);
+}
+
+.border-btd-gold {
+  border-color: #ffd700;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.45), inset 0 0 10px rgba(255, 215, 0, 0.25);
+}
+
+.border-btd-black {
+  border-color: #ffd700;
+  border-width: 2px;
+  background: linear-gradient(180deg, #171424 0%, #09090d 100%);
+  box-shadow: 0 0 0 1px #050507, 0 0 22px rgba(168, 85, 247, 0.6), inset 0 0 14px rgba(168, 85, 247, 0.25);
+  animation: pulse-black-border 4s infinite ease-in-out;
+}
+
+@keyframes pulse-active {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.3), inset 0 0 6px rgba(59, 130, 246, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(59, 130, 246, 0.65), inset 0 0 12px rgba(59, 130, 246, 0.35);
+  }
+}
+
+@keyframes pulse-black-border {
+  0%, 100% {
+    box-shadow: 0 0 0 1px #050507, 0 0 18px rgba(168, 85, 247, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 1px #ffd700, 0 0 28px rgba(168, 85, 247, 0.75), 0 0 40px rgba(255, 215, 0, 0.35);
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0e0e12;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #262633;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3b3b4f;
+}
