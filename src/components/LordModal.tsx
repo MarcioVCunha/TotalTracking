@@ -4,7 +4,7 @@ import { Lord, CampaignRun, GameDifficulty, RunStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatHMS, formatDurationHuman, toUtcDateKey } from '../lib/timeUtils';
 import { FACTIONS_META } from '../data/factions';
-import { DEFAULT_PORTRAITS, WIKI_PORTRAITS } from '../data/portraits';
+import { DEFAULT_PORTRAITS, WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
 
 interface LordModalProps {
   lord: Lord;
@@ -79,12 +79,12 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
     setEditingRunId(null);
   };
 
-  const primaryPortrait = progress.customImg || portraitsCache[lord.id] || DEFAULT_PORTRAITS[lord.id] || `./portraits/${lord.id}.webp`;
+  const primaryPortrait = getLordPortrait(lord.id, progress.customImg);
   const [imgSrc, setImgSrc] = useState<string>(primaryPortrait);
 
   useEffect(() => {
-    setImgSrc(progress.customImg || portraitsCache[lord.id] || DEFAULT_PORTRAITS[lord.id] || `./portraits/${lord.id}.webp`);
-  }, [progress.customImg, portraitsCache, lord.id]);
+    setImgSrc(getLordPortrait(lord.id, progress.customImg));
+  }, [progress.customImg, lord.id]);
 
   useEffect(() => {
     let isMounted = true;
@@ -139,9 +139,14 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
                   alt={lord.name}
                   className="w-full h-full object-cover object-top"
                   onError={() => {
-                    const fallback = WIKI_PORTRAITS[lord.id];
-                    if (fallback && imgSrc !== fallback) {
-                      setImgSrc(fallback);
+                    const localFallback = `./portraits/${lord.id}.webp`;
+                    if (imgSrc !== localFallback) {
+                      setImgSrc(localFallback);
+                    } else {
+                      const wikiFallback = WIKI_PORTRAITS[lord.id];
+                      if (wikiFallback && imgSrc !== wikiFallback) {
+                        setImgSrc(wikiFallback);
+                      }
                     }
                   }}
                 />

@@ -17,7 +17,7 @@ import { Lord, RunStatus, GameDifficulty } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatHMS, formatDurationHuman } from '../lib/timeUtils';
 import { FACTIONS_META } from '../data/factions';
-import { DEFAULT_PORTRAITS, WIKI_PORTRAITS } from '../data/portraits';
+import { DEFAULT_PORTRAITS, WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
 
 interface FinishCampaignModalProps {
   lord: Lord;
@@ -35,12 +35,7 @@ export const FinishCampaignModal: React.FC<FinishCampaignModalProps> = ({ lord, 
 
   const progress = lordsProgress[lord.id] || { short: false, long: false, crisis: false, black: false };
   const factionMeta = FACTIONS_META[lord.faction];
-  const primaryPortrait =
-    progress.customImg ||
-    portraitsCache[lord.id] ||
-    DEFAULT_PORTRAITS[lord.id] ||
-    `./portraits/${lord.id}.webp`;
-
+  const primaryPortrait = getLordPortrait(lord.id, progress.customImg);
   const [imgSrc, setImgSrc] = useState<string>(primaryPortrait);
   const [loading, setLoading] = useState(true);
 
@@ -125,9 +120,14 @@ export const FinishCampaignModal: React.FC<FinishCampaignModalProps> = ({ lord, 
                 alt={lord.name}
                 className="w-full h-full object-cover object-top"
                 onError={() => {
-                  const fallback = WIKI_PORTRAITS[lord.id];
-                  if (fallback && imgSrc !== fallback) {
-                    setImgSrc(fallback);
+                  const localFallback = `./portraits/${lord.id}.webp`;
+                  if (imgSrc !== localFallback) {
+                    setImgSrc(localFallback);
+                  } else {
+                    const wikiFallback = WIKI_PORTRAITS[lord.id];
+                    if (wikiFallback && imgSrc !== wikiFallback) {
+                      setImgSrc(wikiFallback);
+                    }
                   }
                 }}
               />

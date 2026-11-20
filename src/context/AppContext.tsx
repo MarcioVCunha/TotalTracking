@@ -204,13 +204,17 @@ function getInitialState(): any {
       Object.entries(parsedV1.portraitsCache).forEach(([idStr, val]) => {
         const id = Number(idStr);
         const newId = Number(OLD_TO_NEW_LORDS[id] || id);
-        if (val) newPortraits[newId] = val as string;
+        if (typeof val === 'string' && !val.includes('wikia.nocookie.net') && !val.includes('fandom.com')) {
+          newPortraits[newId] = val;
+        }
       });
     }
     if (parsedV2?.portraitsCache) {
       Object.entries(parsedV2.portraitsCache).forEach(([idStr, val]) => {
         const id = Number(idStr);
-        if (val) newPortraits[id] = val as string;
+        if (typeof val === 'string' && !val.includes('wikia.nocookie.net') && !val.includes('fandom.com')) {
+          newPortraits[id] = val;
+        }
       });
     }
 
@@ -274,6 +278,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_DATA.portraitsCache || {};
   });
 
+  const [isStorageLoaded, setIsStorageLoaded] = useState<boolean>(false);
   const [isGameRunning, setIsGameRunning] = useState<boolean>(false);
   const [activeSeconds, setActiveSeconds] = useState<number>(0);
   const [lastDetectedSave, setLastDetectedSave] = useState<SaveDetectionPayload | null>(null);
@@ -282,26 +287,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (window.electronAPI?.loadStorageFile) {
       window.electronAPI.loadStorageFile().then(content => {
-        if (!content) return;
+        if (!content) {
+          setIsStorageLoaded(true);
+          return;
+        }
         try {
           const fileData = JSON.parse(content);
-          if (fileData.runs?.length > 0 || fileData.sessions?.length > 0) {
-            setRuns(curr => (curr.length >= (fileData.runs?.length || 0) ? curr : fileData.runs));
-            setSessions(curr => (curr.length >= (fileData.sessions?.length || 0) ? curr : fileData.sessions));
-            setLordsProgress(curr => (Object.keys(curr).length >= Object.keys(fileData.lordsProgress || {}).length ? curr : fileData.lordsProgress));
-            if (fileData.portraitsCache) {
-              setPortraitsCache(curr => ({ ...fileData.portraitsCache, ...curr }));
+          if (fileData) {
+            // Intelligent merge: ensure no user progress or medals are lost
+            if (fileData.lordsProgress && Object.keys(fileData.lordsProgress).length > 0) {
+              setLordsProgress(curr => {
+                const merged: Record<number, LordProgress> = { ...curr };
+                Object.entries(fileData.lordsProgress).forEach(([idStr, val]: [string, any]) => {
+                  const id = Number(idStr);
+                  const c = merged[id] || { short: false, long: false, crisis: false, black: false };
+                  merged[id] = {
+                    short: c.short || Boolean(val.short),
+                    long: c.long || Boolean(val.long),
+                    crisis: c.crisis || Boolean(val.crisis),
+                    black: c.black || Boolean(val.black),
+                    customImg: c.customImg || val.customImg,
+                  };
+                });
+                return merged;
+              });
+            }
+
+            if (fileData.runs && fileData.runs.length > 0) {
+              setRuns(curr => {
+                const map = new Map<string, CampaignRun>();
+                fileData.runs.forEach((r: CampaignRun) => map.set(r.id, r));
+                curr.forEach(r => {
+                  const existing = map.get(r.id);
+                  if (!existing) {
+                    map.set(r.id, r);
+                  } else {
+                    map.set(r.id, {
+                      ...r,
+                      totalSeconds: (r.totalSeconds && r.totalSeconds > 0) ? r.totalSeconds : (existing.totalSeconds || 0),
+                      manualDays: (r.manualDays && r.manualDays > 0) ? r.manualDays : (existing.manualDays || 1),
+                    });
+                  }
+                });
+                return Array.from(map.values());
+              });
+            }
+
+            if (fileData.sessions && fileData.sessions.length > 0) {
+              setSessions(curr => {
+                const map = new Map<string, PlaySession>();
+                fileData.sessions.forEach((s: PlaySession) => map.set(s.id, s));
+                curr.forEach(s => map.set(s.id, s));
+                return Array.from(map.values()).sort((a, b) => b.startedAt - a.startedAt);
+              });
             }
           }
         } catch (e) {
           console.error('Error recovering state from file backup:', e);
+        } finally {
+          setIsStorageLoaded(true);
         }
+      }).catch(() => {
+        setIsStorageLoaded(true);
       });
+    } else {
+      setIsStorageLoaded(true);
     }
   }, []);
 
-  // Save to localStorage and storage.json file backup
+  // Save to localStorage and storage.json file backup (guarded against uninitialized saves)
   useEffect(() => {
+    if (!isStorageLoaded) return;
     try {
       const stateObj = {
         lordsProgress,
@@ -320,7 +376,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.error('Failed to save state to localStorage', err);
     }
-  }, [lordsProgress, runs, sessions, activeSession, settings, portraitsCache]);
+  }, [isStorageLoaded, lordsProgress, runs, sessions, activeSession, settings, portraitsCache]);
 
   // Live timer tick
   useEffect(() => {
@@ -336,48 +392,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const interval = setInterval(updateElapsed, 1000);
     return () => clearInterval(interval);
   }, [activeSession]);
-
-  // Fetch missing portraits from Total War Warhammer Fandom Wiki
-  useEffect(() => {
-    const fetchWikiPortraits = async () => {
-      const missing = LORDS_DATA.filter(l => !portraitsCache[l.id]);
-      if (missing.length === 0) return;
-
-      const updated = { ...portraitsCache };
-      let changed = false;
-
-      for (let i = 0; i < missing.length; i += 20) {
-        const batch = missing.slice(i, i + 20);
-        const titles = batch.map(b => b.wiki).join('|');
-        try {
-          const url = `https://totalwarwarhammer.fandom.com/api.php?action=query&titles=${encodeURIComponent(
-            titles
-          )}&prop=pageimages&pithumbsize=300&redirects=1&format=json&origin=*`;
-          const res = await fetch(url);
-          const data = await res.json();
-          if (data?.query?.pages) {
-            Object.values(data.query.pages).forEach((p: any) => {
-              if (p.thumbnail?.source) {
-                const match = batch.find(b => b.wiki.replace(/_/g, ' ').toLowerCase() === p.title.toLowerCase());
-                if (match) {
-                  updated[match.id] = p.thumbnail.source;
-                  changed = true;
-                }
-              }
-            });
-          }
-        } catch (e) {
-          // ignore network failures for portraits
-        }
-      }
-
-      if (changed) {
-        setPortraitsCache(updated);
-      }
-    };
-
-    fetchWikiPortraits();
-  }, []);
 
   // Stop active session helper
   const stopActiveSession = useCallback((turnReached?: number) => {

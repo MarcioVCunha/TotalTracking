@@ -225,3 +225,16 @@ export const WIKI_PORTRAITS: Record<number, string> = {
   109: "https://static.wikia.nocookie.net/totalwarhammer_gamepedia/images/1/1a/Neferata.png/revision/latest/scale-to-width-down/223?cb=20260924150637",
   110: "https://static.wikia.nocookie.net/totalwarhammer_gamepedia/images/5/5d/Nagash_mov.png/revision/latest/scale-to-width-down/223?cb=20260924150912",
 };
+
+/**
+ * Returns the definitive portrait path for a lord:
+ * 1. User customImg if provided
+ * 2. Bundled local offline asset (./portraits/{lordId}.webp)
+ */
+export function getLordPortrait(lordId: number, customImg?: string): string {
+  if (customImg && customImg.trim().length > 0) {
+    return customImg;
+  }
+  return `./portraits/${lordId}.webp`;
+}
+

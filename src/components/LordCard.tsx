@@ -4,7 +4,7 @@ import { Lord } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatDurationHuman } from '../lib/timeUtils';
 import { FACTIONS_META } from '../data/factions';
-import { DEFAULT_PORTRAITS, WIKI_PORTRAITS } from '../data/portraits';
+import { DEFAULT_PORTRAITS, WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
 
 interface LordCardProps {
   lord: Lord;
@@ -41,12 +41,12 @@ export const LordCard: React.FC<LordCardProps> = ({ lord, onOpenModal }) => {
     borderClass = 'border-btd-active';
   }
 
-  const primaryPortrait = progress.customImg || portraitsCache[lord.id] || DEFAULT_PORTRAITS[lord.id] || `./portraits/${lord.id}.webp`;
+  const primaryPortrait = getLordPortrait(lord.id, progress.customImg);
   const [imgSrc, setImgSrc] = useState<string>(primaryPortrait);
 
   useEffect(() => {
-    setImgSrc(progress.customImg || portraitsCache[lord.id] || DEFAULT_PORTRAITS[lord.id] || `./portraits/${lord.id}.webp`);
-  }, [progress.customImg, portraitsCache, lord.id]);
+    setImgSrc(getLordPortrait(lord.id, progress.customImg));
+  }, [progress.customImg, lord.id]);
 
   const factionMeta = FACTIONS_META[lord.faction];
   const factionColor = factionMeta?.colorHex || '#c9a227';
@@ -67,9 +67,14 @@ export const LordCard: React.FC<LordCardProps> = ({ lord, onOpenModal }) => {
             className="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
             loading="lazy"
             onError={() => {
-              const fallback = WIKI_PORTRAITS[lord.id];
-              if (fallback && imgSrc !== fallback) {
-                setImgSrc(fallback);
+              const localFallback = `./portraits/${lord.id}.webp`;
+              if (imgSrc !== localFallback) {
+                setImgSrc(localFallback);
+              } else {
+                const wikiFallback = WIKI_PORTRAITS[lord.id];
+                if (wikiFallback && imgSrc !== wikiFallback) {
+                  setImgSrc(wikiFallback);
+                }
               }
             }}
           />
