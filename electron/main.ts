@@ -5,6 +5,18 @@ import { ProcessWatcher } from './processWatcher';
 import { SaveWatcher } from './saveWatcher';
 import { ReplayInspector } from './replayInspector';
 
+// Ensure consistent userData path across development and production
+const appDataEnv = process.env.APPDATA || '';
+if (appDataEnv) {
+  app.setPath('userData', path.join(appDataEnv, 'total-tracking'));
+}
+
+// Single instance lock: prevent duplicate processes from locking LevelDB database
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
@@ -135,6 +147,15 @@ function updateTrayMenu() {
   tray.setContextMenu(contextMenu);
 }
 
+// Focus existing window when second instance is launched
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   app.setAppUserModelId('com.totaltracking.app');
@@ -226,6 +247,34 @@ ipcMain.handle('create-desktop-shortcut', async () => {
     return { success: true, message: 'Atalho criado na Área de Trabalho com sucesso!' };
   } catch (err: any) {
     return { success: false, message: err?.message || 'Erro ao criar atalho' };
+  }
+});
+
+ipcMain.handle('load-storage-file', async () => {
+  try {
+    const userData = app.getPath('userData');
+    const storagePath = path.join(userData, 'storage.json');
+    if (fs.existsSync(storagePath)) {
+      return fs.readFileSync(storagePath, 'utf8');
+    }
+    const backupPath = path.join(userData, 'recovered_backup.json');
+    if (fs.existsSync(backupPath)) {
+      return fs.readFileSync(backupPath, 'utf8');
+    }
+  } catch (e) {
+    console.error('Error loading storage file in main:', e);
+  }
+  return null;
+});
+
+ipcMain.handle('save-storage-file', async (_event, jsonContent: string) => {
+  try {
+    const storagePath = path.join(app.getPath('userData'), 'storage.json');
+    fs.writeFileSync(storagePath, jsonContent, 'utf8');
+    return true;
+  } catch (e) {
+    console.error('Error saving storage file in main:', e);
+    return false;
   }
 });
 

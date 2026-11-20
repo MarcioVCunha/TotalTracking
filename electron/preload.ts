@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getReplaysList: (customPath?: string) => ipcRenderer.invoke('get-replays-list', customPath),
   browseFolder: () => ipcRenderer.invoke('browse-folder'),
   createDesktopShortcut: () => ipcRenderer.invoke('create-desktop-shortcut'),
+  loadStorageFile: () => ipcRenderer.invoke('load-storage-file'),
+  saveStorageFile: (jsonContent: string) => ipcRenderer.invoke('save-storage-file', jsonContent),
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   closeWindow: () => ipcRenderer.send('window-close'),
 });

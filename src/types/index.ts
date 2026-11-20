@@ -112,6 +112,8 @@ export interface ElectronAPI {
   getReplaysList: (customPath?: string) => Promise<ReplayItem[]>;
   browseFolder: () => Promise<string | null>;
   createDesktopShortcut: () => Promise<{ success: boolean; message: string }>;
+  loadStorageFile: () => Promise<string | null>;
+  saveStorageFile: (jsonContent: string) => Promise<boolean>;
   minimizeWindow: () => void;
   closeWindow: () => void;
 }

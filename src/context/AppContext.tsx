@@ -278,20 +278,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeSeconds, setActiveSeconds] = useState<number>(0);
   const [lastDetectedSave, setLastDetectedSave] = useState<SaveDetectionPayload | null>(null);
 
-  // Save to localStorage
+  // Auto-heal / Recover from storage.json file backup if needed
+  useEffect(() => {
+    if (window.electronAPI?.loadStorageFile) {
+      window.electronAPI.loadStorageFile().then(content => {
+        if (!content) return;
+        try {
+          const fileData = JSON.parse(content);
+          if (fileData.runs?.length > 0 || fileData.sessions?.length > 0) {
+            setRuns(curr => (curr.length >= (fileData.runs?.length || 0) ? curr : fileData.runs));
+            setSessions(curr => (curr.length >= (fileData.sessions?.length || 0) ? curr : fileData.sessions));
+            setLordsProgress(curr => (Object.keys(curr).length >= Object.keys(fileData.lordsProgress || {}).length ? curr : fileData.lordsProgress));
+            if (fileData.portraitsCache) {
+              setPortraitsCache(curr => ({ ...fileData.portraitsCache, ...curr }));
+            }
+          }
+        } catch (e) {
+          console.error('Error recovering state from file backup:', e);
+        }
+      });
+    }
+  }, []);
+
+  // Save to localStorage and storage.json file backup
   useEffect(() => {
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          lordsProgress,
-          runs,
-          sessions,
-          activeSession,
-          settings,
-          portraitsCache,
-        })
-      );
+      const stateObj = {
+        lordsProgress,
+        runs,
+        sessions,
+        activeSession,
+        settings,
+        portraitsCache,
+      };
+      const jsonStr = JSON.stringify(stateObj);
+      localStorage.setItem(STORAGE_KEY, jsonStr);
+
+      if (window.electronAPI?.saveStorageFile) {
+        window.electronAPI.saveStorageFile(jsonStr);
+      }
     } catch (err) {
       console.error('Failed to save state to localStorage', err);
     }
