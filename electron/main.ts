@@ -11,10 +11,28 @@ if (appDataEnv) {
   app.setPath('userData', path.join(appDataEnv, 'total-tracking'));
 }
 
-// Single instance lock: prevent duplicate processes from locking LevelDB database
+// Global crash logging
+process.on('uncaughtException', (error) => {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'crash.log');
+    fs.appendFileSync(logPath, `[${new Date().toISOString()}] Uncaught Exception: ${error?.stack || error}\n`);
+  } catch {}
+  console.error('Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'crash.log');
+    fs.appendFileSync(logPath, `[${new Date().toISOString()}] Unhandled Rejection: ${reason}\n`);
+  } catch {}
+  console.error('Unhandled Rejection:', reason);
+});
+
+// Single instance lock: prevent duplicate processes from colliding on LevelDB database
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
+  process.exit(0);
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -49,6 +67,19 @@ async function loadApp(window: BrowserWindow) {
   window.focus();
 }
 
+function shouldMinimizeToTray(): boolean {
+  try {
+    const storagePath = path.join(app.getPath('userData'), 'storage.json');
+    if (fs.existsSync(storagePath)) {
+      const data = JSON.parse(fs.readFileSync(storagePath, 'utf8'));
+      if (data?.settings?.minimizeToTray === false) {
+        return false;
+      }
+    }
+  } catch {}
+  return true;
+}
+
 function createWindow() {
   const iconPath = path.join(__dirname, 'assets', 'icon.ico');
 
@@ -70,13 +101,14 @@ function createWindow() {
 
   loadApp(mainWindow);
 
-  // Minimize to tray on close if not quitting
+  // Minimize to tray on close only if tray is active, minimizeToTray is enabled, and not explicitly quitting
   mainWindow.on('close', (event) => {
-    if (!isQuitting) {
+    if (tray && !isQuitting && shouldMinimizeToTray()) {
       event.preventDefault();
       mainWindow?.hide();
       return false;
     }
+    isQuitting = true;
   });
 
   mainWindow.on('closed', () => {
@@ -88,10 +120,21 @@ const TRAY_ICON_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAV0lEQV
 
 function createTray() {
   try {
+    const trayPng = path.join(__dirname, 'assets', 'tray-icon.png');
     const icoPath = path.join(__dirname, 'assets', 'icon.ico');
-    const icon = fs.existsSync(icoPath)
-      ? nativeImage.createFromPath(icoPath)
-      : nativeImage.createFromBuffer(Buffer.from(TRAY_ICON_BASE64, 'base64'));
+    let icon: any = null;
+
+    if (fs.existsSync(trayPng)) {
+      icon = nativeImage.createFromBuffer(fs.readFileSync(trayPng));
+    } else if (fs.existsSync(icoPath)) {
+      icon = nativeImage.createFromBuffer(fs.readFileSync(icoPath));
+    } else {
+      icon = nativeImage.createFromBuffer(Buffer.from(TRAY_ICON_BASE64, 'base64'));
+    }
+
+    if (!icon || icon.isEmpty()) {
+      return;
+    }
 
     tray = new Tray(icon);
     tray.setToolTip('Total Tracking — Total War Companion');
@@ -101,12 +144,13 @@ function createTray() {
     tray.on('double-click', () => {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
+        if (!mainWindow.isVisible()) mainWindow.show();
         mainWindow.focus();
       }
     });
   } catch (err) {
-    console.error('Tray creation error:', err);
+    console.warn('Tray creation warning, running without tray:', err);
+    tray = null;
   }
 }
 
@@ -151,7 +195,7 @@ function updateTrayMenu() {
 app.on('second-instance', () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
+    if (!mainWindow.isVisible()) mainWindow.show();
     mainWindow.focus();
   }
 });
@@ -205,8 +249,10 @@ app.on('before-quit', () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    // Keep running in tray unless explicitly quit
-    if (isQuitting) app.quit();
+    // Keep running in tray only if tray is active and user enabled minimizeToTray
+    if (isQuitting || !tray || !shouldMinimizeToTray()) {
+      app.quit();
+    }
   }
 });
 
@@ -283,5 +329,5 @@ ipcMain.on('window-minimize', () => {
 });
 
 ipcMain.on('window-close', () => {
-  mainWindow?.hide();
+  mainWindow?.close();
 });
