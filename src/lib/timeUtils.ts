@@ -77,3 +77,49 @@ export function calculateMinutesPerTurn(totalSeconds: number, turns: number): nu
   if (!turns || turns <= 0) return 0;
   return Number(((totalSeconds / 60) / turns).toFixed(1));
 }
+
+/**
+ * Determine the start date of the current active or unallocated campaign for a lord
+ */
+export function getCampaignStartDate(
+  lordId: number,
+  runs: { lordId: number; status: string; startDate?: string; endDate?: string; createdAt?: number }[],
+  sessions: PlaySession[],
+  activeSession: { lordId: number; startedAt: number } | null
+): string {
+  const targetId = Number(lordId);
+
+  // 1. If an in_progress run exists, use its startDate
+  const inProg = runs.find(r => Number(r.lordId) === targetId && r.status === 'in_progress');
+  if (inProg?.startDate) {
+    return inProg.startDate;
+  }
+
+  // 2. Find the last completed run for this lord
+  const completedRuns = runs
+    .filter(r => Number(r.lordId) === targetId && (r.status === 'victory' || r.status === 'defeat'))
+    .sort((a, b) => {
+      const timeA = new Date(a.endDate || a.createdAt || 0).getTime();
+      const timeB = new Date(b.endDate || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+  const lastCutoffTime = completedRuns.length > 0
+    ? new Date(completedRuns[0].endDate || completedRuns[0].createdAt || 0).getTime()
+    : 0;
+
+  // 3. Sessions strictly after the last completed run belong to this current campaign
+  const currentSessions = sessions.filter(s => Number(s.lordId) === targetId && s.startedAt > lastCutoffTime);
+
+  if (currentSessions.length > 0) {
+    const earliestSessionStart = Math.min(...currentSessions.map(s => s.startedAt));
+    return new Date(earliestSessionStart).toISOString();
+  }
+
+  // 4. Fallback to active session startedAt or now
+  if (activeSession && Number(activeSession.lordId) === targetId) {
+    return new Date(activeSession.startedAt).toISOString();
+  }
+
+  return new Date().toISOString();
+}

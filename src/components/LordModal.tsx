@@ -20,6 +20,8 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
     addRun,
     updateRun,
     deleteRun,
+    finishCampaign,
+    getCampaignAutoDetails,
     setLordCustomImage,
     getLordTotalSeconds,
     portraitsCache,
@@ -83,6 +85,20 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
   useEffect(() => {
     setImgSrc(progress.customImg || portraitsCache[lord.id] || DEFAULT_PORTRAITS[lord.id] || `./portraits/${lord.id}.webp`);
   }, [progress.customImg, portraitsCache, lord.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+    getCampaignAutoDetails(lord.id).then(details => {
+      if (!isMounted) return;
+      if (details.turn > 0) setTurns(String(details.turn));
+      if (details.days > 0) setDays(String(details.days));
+      if (details.difficulty) setDifficulty(details.difficulty);
+      setIsBlackBorderEligible(details.isBlackBorderEligible);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [lord.id, getCampaignAutoDetails]);
 
   const factionMeta = FACTIONS_META[lord.faction];
   const wikiUrl = `https://totalwarwarhammer.fandom.com/wiki/${lord.wiki}`;

@@ -6,10 +6,13 @@ import {
   ActiveSession,
   AppSettings,
   SaveDetectionPayload,
-  Lord
+  Lord,
+  GameDifficulty,
+  RunStatus
 } from '../types';
 import { LORDS_DATA } from '../data/lords';
 import { getSupabaseClient, syncWithSupabase } from '../lib/supabase';
+import { calculateCalendarDays, getCampaignStartDate } from '../lib/timeUtils';
 
 interface AppContextType {
   lordsProgress: Record<number, LordProgress>;
@@ -29,6 +32,28 @@ interface AppContextType {
   addRun: (lordId: number, run: Partial<CampaignRun>) => void;
   updateRun: (runId: string, updates: Partial<CampaignRun>) => void;
   deleteRun: (runId: string) => void;
+  finishCampaign: (
+    lordId: number,
+    data?: {
+      status?: RunStatus;
+      difficulty?: GameDifficulty;
+      finalTurn?: number;
+      manualDays?: number;
+      totalSeconds?: number;
+      isBlackBorderEligible?: boolean;
+      medal?: 'short' | 'long' | 'crisis' | 'black';
+      notes?: string;
+    }
+  ) => void;
+  getCampaignAutoDetails: (lordId: number) => Promise<{
+    turn: number;
+    days: number;
+    startDate: string;
+    totalSeconds: number;
+    difficulty: GameDifficulty;
+    isBlackBorderEligible: boolean;
+    suggestedMedal?: 'short' | 'long' | 'crisis' | 'black';
+  }>;
   setLordCustomImage: (lordId: number, url: string) => void;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
   getLordTotalSeconds: (lordId: number) => number;
@@ -653,6 +678,197 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [sessions, activeSession, activeSeconds, runs]
   );
 
+  const getCampaignAutoDetails = useCallback(
+    async (lordId: number) => {
+      const targetId = Number(lordId);
+      const now = Date.now();
+
+      // 1. Turn detection
+      let turn = 1;
+      if (lastDetectedSave?.lordId === targetId && lastDetectedSave.turn) {
+        turn = lastDetectedSave.turn;
+      } else if (window.electronAPI?.getSavesList) {
+        try {
+          const saves = await window.electronAPI.getSavesList(settings.savesPath);
+          const matchingSave = saves?.find(s => Number(s.lordId) === targetId && s.turn);
+          if (matchingSave?.turn) {
+            turn = matchingSave.turn;
+          }
+        } catch (e) {
+          console.error('Error fetching saves in getCampaignAutoDetails:', e);
+        }
+      }
+
+      if (turn === 1) {
+        const inProg = runs.find(r => Number(r.lordId) === targetId && r.status === 'in_progress');
+        if (inProg?.finalTurn) {
+          turn = inProg.finalTurn;
+        } else {
+          const maxSessionTurn = sessions
+            .filter(s => Number(s.lordId) === targetId)
+            .reduce((max, s) => Math.max(max, s.turnReached || 0), 0);
+          if (maxSessionTurn > 0) turn = maxSessionTurn;
+        }
+      }
+
+      // 2. Start date and days
+      const startDate = getCampaignStartDate(targetId, runs, sessions, activeSession);
+      const days = calculateCalendarDays(startDate, now);
+
+      // 3. Unallocated totalSeconds
+      const allocated = runs
+        .filter(r => Number(r.lordId) === targetId && (r.status === 'victory' || r.status === 'defeat'))
+        .reduce((sum, r) => sum + (Number(r.totalSeconds) || 0), 0);
+      const lordSessionSec = sessions
+        .filter(s => Number(s.lordId) === targetId)
+        .reduce((sum, s) => sum + (Number(s.durationSeconds) || 0), 0);
+      const currentActive = (activeSession && Number(activeSession.lordId) === targetId) ? activeSeconds : 0;
+      const totalAvailable = lordSessionSec + currentActive;
+      const unallocated = totalAvailable - allocated;
+      const totalSeconds = unallocated > 0 ? unallocated : totalAvailable;
+
+      // 4. In progress run reference
+      const activeRun = runs.find(r => Number(r.lordId) === targetId && r.status === 'in_progress');
+
+      return {
+        turn,
+        days,
+        startDate,
+        totalSeconds,
+        difficulty: (activeRun?.difficulty || 'Very Hard') as GameDifficulty,
+        isBlackBorderEligible: activeRun?.isBlackBorderEligible ?? true,
+        suggestedMedal: (lastDetectedSave?.lordId === targetId && lastDetectedSave.medalSuggestion) || 'short',
+      };
+    },
+    [lastDetectedSave, settings.savesPath, runs, sessions, activeSession, activeSeconds]
+  );
+
+  const finishCampaign = useCallback(
+    (
+      lordId: number,
+      data?: {
+        status?: RunStatus;
+        difficulty?: GameDifficulty;
+        finalTurn?: number;
+        manualDays?: number;
+        totalSeconds?: number;
+        isBlackBorderEligible?: boolean;
+        medal?: 'short' | 'long' | 'crisis' | 'black';
+        notes?: string;
+      }
+    ) => {
+      const targetId = Number(lordId);
+      const now = Date.now();
+      const status: RunStatus = data?.status || 'victory';
+      const isBlackBorder = data?.isBlackBorderEligible ?? true;
+
+      // 1. Commit active session if running for this lord
+      let activeDurationToAdd = 0;
+      if (activeSession && Number(activeSession.lordId) === targetId) {
+        activeDurationToAdd = Math.max(1, Math.floor((now - activeSession.startedAt) / 1000));
+        const newSession: PlaySession = {
+          id: `sess_${now}_${Math.random().toString(36).substring(2, 7)}`,
+          runId: undefined,
+          lordId: targetId,
+          startedAt: activeSession.startedAt,
+          endedAt: now,
+          durationSeconds: activeDurationToAdd,
+          turnReached: data?.finalTurn,
+          autoDetected: !document.hasFocus(),
+        };
+        setActiveSession(null);
+        setSessions(prev => [newSession, ...prev]);
+      }
+
+      // 2. Compute totalSeconds
+      let computedSeconds = Number(data?.totalSeconds);
+      if (!computedSeconds || computedSeconds <= 0) {
+        const allocated = runs
+          .filter(r => Number(r.lordId) === targetId && (r.status === 'victory' || r.status === 'defeat'))
+          .reduce((sum, r) => sum + (Number(r.totalSeconds) || 0), 0);
+        const lordSessionSec = sessions
+          .filter(s => Number(s.lordId) === targetId)
+          .reduce((sum, s) => sum + (Number(s.durationSeconds) || 0), 0);
+        const totalAvailable = lordSessionSec + activeDurationToAdd;
+        const unallocated = totalAvailable - allocated;
+        computedSeconds = unallocated > 0 ? unallocated : totalAvailable;
+      }
+
+      // 3. Determine start date and days
+      const startDate = getCampaignStartDate(targetId, runs, sessions, activeSession);
+      const manualDays = data?.manualDays || calculateCalendarDays(startDate, now);
+
+      // 4. Determine finalTurn
+      let finalTurn = data?.finalTurn;
+      if (!finalTurn || finalTurn <= 0) {
+        if (lastDetectedSave?.lordId === targetId && lastDetectedSave.turn) {
+          finalTurn = lastDetectedSave.turn;
+        } else {
+          const inProgRun = runs.find(r => Number(r.lordId) === targetId && r.status === 'in_progress');
+          finalTurn = inProgRun?.finalTurn || 1;
+        }
+      }
+
+      const difficulty: GameDifficulty = data?.difficulty || 'Very Hard';
+
+      // 5. Update in_progress run or create new run
+      const inProgRun = runs.find(r => Number(r.lordId) === targetId && r.status === 'in_progress');
+      if (inProgRun) {
+        setRuns(prev =>
+          prev.map(r =>
+            r.id === inProgRun.id
+              ? {
+                  ...r,
+                  status,
+                  difficulty,
+                  finalTurn,
+                  endDate: new Date(now).toISOString(),
+                  manualDays,
+                  totalSeconds: Math.max(0, computedSeconds),
+                  notes: data?.notes !== undefined ? data.notes : r.notes,
+                  isBlackBorderEligible: isBlackBorder,
+                }
+              : r
+          )
+        );
+      } else {
+        const newRun: CampaignRun = {
+          id: `run_${now}_${Math.random().toString(36).substring(2, 7)}`,
+          lordId: targetId,
+          status,
+          difficulty,
+          finalTurn,
+          startDate,
+          endDate: new Date(now).toISOString(),
+          manualDays,
+          totalSeconds: Math.max(0, computedSeconds),
+          notes: data?.notes || '',
+          isBlackBorderEligible: isBlackBorder,
+          createdAt: now,
+        };
+        setRuns(prev => [newRun, ...prev]);
+      }
+
+      // 6. If victory, award medals
+      if (status === 'victory') {
+        const medalKey = data?.medal || 'short';
+        setLordsProgress(prev => {
+          const cur = prev[targetId] || { short: false, long: false, crisis: false, black: false };
+          return {
+            ...prev,
+            [targetId]: {
+              ...cur,
+              [medalKey]: true,
+              short: true,
+              black: isBlackBorder ? true : cur.black,
+            },
+          };
+        });
+      }
+    },
+    [activeSession, runs, sessions, lastDetectedSave]
+  );
+
   const getLordActiveRun = useCallback(
     (lordId: number): CampaignRun | undefined => {
       const targetId = Number(lordId);
@@ -728,6 +944,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addRun,
         updateRun,
         deleteRun,
+        finishCampaign,
+        getCampaignAutoDetails,
         setLordCustomImage,
         updateSettings,
         getLordTotalSeconds,
