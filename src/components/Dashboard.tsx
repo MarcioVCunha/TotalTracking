@@ -19,7 +19,11 @@ import { formatHMS, formatDurationHuman, calculateUniqueDays, calculateMinutesPe
 import { FACTIONS_META } from '../data/factions';
 import { FactionStats } from '../types';
 
-export const Dashboard: React.FC = () => {
+interface DashboardProps {
+  onOpenSessions?: () => void;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ onOpenSessions }) => {
   const { lordsProgress, runs, sessions, getLordTotalSeconds } = useApp();
 
   const [sortField, setSortField] = useState<keyof FactionStats>('totalSeconds');
@@ -215,7 +219,18 @@ export const Dashboard: React.FC = () => {
           <div className="text-2xl font-black text-white font-mono-numbers mt-2">
             {formatHMS(totalSecondsAll)}
           </div>
-          <div className="text-[11px] text-[#9494a8] mt-1">{sessions.length} sessões gravadas</div>
+          <div className="text-[11px] text-[#9494a8] mt-1 flex items-center justify-between">
+            <span>{sessions.length} sessões gravadas</span>
+            {onOpenSessions && (
+              <button
+                onClick={onOpenSessions}
+                className="text-[10px] text-amber-400 hover:text-amber-300 font-bold underline flex items-center gap-1 transition-colors"
+                title="Abrir Gerenciador de Sessões"
+              >
+                Gerenciar
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="bg-[#0e0e12] p-4 rounded-xl border border-[#262633] shadow-md flex flex-col justify-between">

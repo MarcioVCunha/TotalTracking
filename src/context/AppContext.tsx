@@ -29,6 +29,8 @@ interface AppContextType {
   toggleMedal: (lordId: number, medal: 'short' | 'long' | 'crisis' | 'black') => void;
   togglePlaySession: (lordId: number) => void;
   stopActiveSession: (turnReached?: number) => void;
+  updateSession: (sessionId: string, updates: Partial<PlaySession>) => void;
+  deleteSession: (sessionId: string) => void;
   addRun: (lordId: number, run: Partial<CampaignRun>) => void;
   updateRun: (runId: string, updates: Partial<CampaignRun>) => void;
   deleteRun: (runId: string) => void;
@@ -465,8 +467,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubscribeProcess = window.electronAPI.onProcessStatusChange(running => {
       setIsGameRunning(running);
 
-      if (settings.processWatcherEnabled && settings.autoPlayEnabled) {
-        if (running && !activeSession) {
+      if (settings.processWatcherEnabled) {
+        if (settings.autoPlayEnabled && running && !activeSession) {
           // Check if there is an in_progress run, or use the most recent save!
           const activeRun = runs.find(r => r.status === 'in_progress');
           if (activeRun) {
@@ -681,6 +683,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteRun = useCallback((runId: string) => {
     setRuns(prev => prev.filter(r => r.id !== runId));
+  }, []);
+
+  const updateSession = useCallback((sessionId: string, updates: Partial<PlaySession>) => {
+    setSessions(prev =>
+      prev.map(s => {
+        if (s.id !== sessionId) return s;
+        const updated = { ...s, ...updates };
+        if (updates.durationSeconds !== undefined) {
+          updated.durationSeconds = Math.max(0, Number(updates.durationSeconds));
+          updated.endedAt = updated.startedAt + updated.durationSeconds * 1000;
+        }
+        if (updates.lordId !== undefined) {
+          updated.lordId = Number(updates.lordId);
+        }
+        if (updates.turnReached !== undefined) {
+          updated.turnReached = updates.turnReached ? Number(updates.turnReached) : undefined;
+        }
+        return updated;
+      })
+    );
+  }, []);
+
+  const deleteSession = useCallback((sessionId: string) => {
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
   }, []);
 
   const setLordCustomImage = useCallback((lordId: number, url: string) => {
@@ -980,6 +1006,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleMedal,
         togglePlaySession,
         stopActiveSession,
+        updateSession,
+        deleteSession,
         addRun,
         updateRun,
         deleteRun,

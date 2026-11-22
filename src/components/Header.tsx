@@ -1,17 +1,19 @@
 import React, { useRef } from 'react';
-import { Swords, Shield, BarChart3, Film, Settings, Cloud, CheckCircle2, AlertCircle, Upload, Download } from 'lucide-react';
+import { Swords, Shield, BarChart3, Film, Settings, Cloud, CheckCircle2, AlertCircle, Upload, Download, Clock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 interface HeaderProps {
   currentTab: 'lords' | 'stats' | 'replays';
   setCurrentTab: (tab: 'lords' | 'stats' | 'replays') => void;
   onOpenSettings: () => void;
+  onOpenSessions: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentTab,
   setCurrentTab,
   onOpenSettings,
+  onOpenSessions,
 }) => {
   const { isGameRunning, settings, triggerCloudSync, exportBackupJson, importBackupJson } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -126,6 +128,16 @@ export const Header: React.FC<HeaderProps> = ({
             />
             {isGameRunning ? 'Warhammer 3 Ativo' : 'Jogo Fechado'}
           </div>
+
+          {/* Sessions Manager Button */}
+          <button
+            onClick={onOpenSessions}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1b1b24] hover:bg-[#262633] text-amber-400 border border-[#262633] hover:border-amber-500/50 transition-colors shadow-sm"
+            title="Ver e Gerenciar Histórico de Sessões"
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>Sessões</span>
+          </button>
 
           {/* Cloud Sync Button */}
           <button

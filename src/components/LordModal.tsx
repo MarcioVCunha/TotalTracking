@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, Trophy, Plus, Trash2, Clock, Calendar, CheckCircle2, Skull, Hourglass, Pencil } from 'lucide-react';
+import { X, ExternalLink, Trophy, Plus, Trash2, Clock, Calendar, CheckCircle2, Skull, Hourglass, Pencil, Check } from 'lucide-react';
 import { Lord, CampaignRun, GameDifficulty, RunStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatHMS, formatDurationHuman, toUtcDateKey } from '../lib/timeUtils';
 import { FACTIONS_META } from '../data/factions';
 import { DEFAULT_PORTRAITS, WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
+import { LORDS_DATA } from '../data/lords';
 
 interface LordModalProps {
   lord: Lord;
@@ -16,6 +17,8 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
     lordsProgress,
     runs,
     sessions,
+    updateSession,
+    deleteSession,
     toggleMedal,
     addRun,
     updateRun,
@@ -77,6 +80,37 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
       manualDays: editDays,
     });
     setEditingRunId(null);
+  };
+
+  // Session Edit State
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editSessionLordId, setEditSessionLordId] = useState<number>(lord.id);
+  const [editSessionHours, setEditSessionHours] = useState<number>(0);
+  const [editSessionMinutes, setEditSessionMinutes] = useState<number>(0);
+  const [editSessionSeconds, setEditSessionSeconds] = useState<number>(0);
+  const [editSessionTurn, setEditSessionTurn] = useState<string>('');
+  const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
+
+  const startEditSession = (s: any) => {
+    setEditingSessionId(s.id);
+    setEditSessionLordId(s.lordId);
+    const dur = Math.max(0, s.durationSeconds);
+    setEditSessionHours(Math.floor(dur / 3600));
+    setEditSessionMinutes(Math.floor((dur % 3600) / 60));
+    setEditSessionSeconds(dur % 60);
+    setEditSessionTurn(s.turnReached ? String(s.turnReached) : '');
+    setConfirmDeleteSessionId(null);
+  };
+
+  const saveEditSession = (sessionId: string) => {
+    const totalSec = Math.max(0, editSessionHours * 3600 + editSessionMinutes * 60 + editSessionSeconds);
+    const turn = editSessionTurn.trim() ? parseInt(editSessionTurn, 10) : undefined;
+    updateSession(sessionId, {
+      lordId: editSessionLordId,
+      durationSeconds: totalSec,
+      turnReached: isNaN(turn as number) ? undefined : turn,
+    });
+    setEditingSessionId(null);
   };
 
   const primaryPortrait = getLordPortrait(lord.id, progress.customImg);
@@ -587,27 +621,179 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
                 Nenhuma sessão cronometrada salva ainda.
               </div>
             ) : (
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                {lordSessions.map(s => (
-                  <div
-                    key={s.id}
-                    className="bg-[#13131a] px-3 py-2 rounded-lg border border-[#262633] flex items-center justify-between text-xs font-mono-numbers"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5 text-[#9494a8]" />
-                      <span>{toUtcDateKey(s.startedAt)}</span>
-                      {s.turnReached && (
-                        <span className="text-[10px] text-sky-400">T{s.turnReached}</span>
-                      )}
-                      {s.autoDetected && (
-                        <span className="text-[9px] px-1 bg-emerald-950 text-emerald-400 rounded border border-emerald-800">
-                          Auto
-                        </span>
-                      )}
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                {lordSessions.map(s => {
+                  const isEditing = editingSessionId === s.id;
+                  const isConfirmingDelete = confirmDeleteSessionId === s.id;
+
+                  if (isEditing) {
+                    return (
+                      <div
+                        key={s.id}
+                        className="bg-[#181822] p-3 rounded-lg border border-amber-500/50 space-y-2.5 text-xs font-mono-numbers animate-in fade-in"
+                      >
+                        <div className="flex items-center justify-between text-[11px] text-[#9494a8]">
+                          <span className="font-bold text-amber-400">Editando Sessão</span>
+                          <span>{new Date(s.startedAt).toLocaleDateString('pt-BR')}</span>
+                        </div>
+
+                        {/* Reassign Lord */}
+                        <div>
+                          <label className="text-[10px] text-[#9494a8] block mb-1 font-bold">Lorde</label>
+                          <select
+                            value={editSessionLordId}
+                            onChange={e => setEditSessionLordId(Number(e.target.value))}
+                            className="w-full bg-[#13131a] text-xs text-white px-2 py-1.5 rounded border border-[#262633] focus:outline-none focus:border-amber-400 cursor-pointer"
+                          >
+                            {LORDS_DATA.map(l => (
+                              <option key={l.id} value={l.id} className="bg-[#181822] text-white">
+                                #{String(l.id).padStart(3, '0')} {l.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Duration H/M/S */}
+                        <div>
+                          <div className="flex items-center justify-between text-[10px] text-[#9494a8] mb-1">
+                            <span className="font-bold">Duração</span>
+                            <span className="text-emerald-400 font-bold">
+                              {formatHMS(editSessionHours * 3600 + editSessionMinutes * 60 + editSessionSeconds)}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <span className="text-[9px] text-[#9494a8] block">Horas</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={editSessionHours}
+                                onChange={e => setEditSessionHours(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                className="w-full bg-[#13131a] text-center text-xs text-white py-1 rounded border border-[#262633] focus:border-amber-400"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-[#9494a8] block">Minutos</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="59"
+                                value={editSessionMinutes}
+                                onChange={e => setEditSessionMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                                className="w-full bg-[#13131a] text-center text-xs text-white py-1 rounded border border-[#262633] focus:border-amber-400"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-[#9494a8] block">Segundos</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="59"
+                                value={editSessionSeconds}
+                                onChange={e => setEditSessionSeconds(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                                className="w-full bg-[#13131a] text-center text-xs text-white py-1 rounded border border-[#262633] focus:border-amber-400"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Turn */}
+                        <div>
+                          <label className="text-[10px] text-[#9494a8] block mb-1">Turno Alcançado (Opcional)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Ex: 58"
+                            value={editSessionTurn}
+                            onChange={e => setEditSessionTurn(e.target.value)}
+                            className="w-full bg-[#13131a] text-xs text-white px-2 py-1 rounded border border-[#262633] focus:border-amber-400"
+                          />
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#262633]">
+                          <button
+                            type="button"
+                            onClick={() => setEditingSessionId(null)}
+                            className="px-2 py-1 bg-[#13131a] hover:bg-[#262633] text-[11px] text-[#9494a8] rounded"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => saveEditSession(s.id)}
+                            className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold rounded flex items-center gap-1"
+                          >
+                            <Check className="w-3 h-3" />
+                            Salvar
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={s.id}
+                      className="bg-[#13131a] px-3 py-2 rounded-lg border border-[#262633] hover:border-[#3b3b4f] flex items-center justify-between text-xs font-mono-numbers transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-[#9494a8]" />
+                        <span>{toUtcDateKey(s.startedAt)}</span>
+                        {s.turnReached && (
+                          <span className="text-[10px] text-sky-400 font-bold">T{s.turnReached}</span>
+                        )}
+                        {s.autoDetected && (
+                          <span className="text-[9px] px-1 bg-emerald-950 text-emerald-400 rounded border border-emerald-800">
+                            Auto
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className="text-emerald-400 font-bold">{formatHMS(s.durationSeconds)}</span>
+
+                        {isConfirmingDelete ? (
+                          <div className="flex items-center gap-1 bg-rose-950/40 border border-rose-800/60 px-1.5 py-0.5 rounded text-[10px]">
+                            <span className="text-rose-300">Excluir?</span>
+                            <button
+                              onClick={() => {
+                                deleteSession(s.id);
+                                setConfirmDeleteSessionId(null);
+                              }}
+                              className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded text-[9px]"
+                            >
+                              Sim
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteSessionId(null)}
+                              className="px-1.5 py-0.5 bg-[#1b1b24] text-[#9494a8] rounded text-[9px]"
+                            >
+                              Não
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => startEditSession(s)}
+                              className="p-1 text-[#9494a8] hover:text-amber-400 transition-colors"
+                              title="Editar sessão"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteSessionId(s.id)}
+                              className="p-1 text-[#9494a8] hover:text-rose-400 transition-colors"
+                              title="Excluir sessão"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-emerald-400 font-bold">{formatHMS(s.durationSeconds)}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
