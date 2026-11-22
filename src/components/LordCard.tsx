@@ -11,7 +11,7 @@ interface LordCardProps {
   onOpenModal: (lordId: number) => void;
 }
 
-export const LordCard: React.FC<LordCardProps> = ({ lord, onOpenModal }) => {
+export const LordCard = React.memo<LordCardProps>(({ lord, onOpenModal }) => {
   const {
     lordsProgress,
     runs,
@@ -88,12 +88,12 @@ export const LordCard: React.FC<LordCardProps> = ({ lord, onOpenModal }) => {
         <div className="absolute inset-0 bg-gradient-to-t from-[#13131a] via-transparent to-black/30 pointer-events-none" />
 
         {/* Chrono Badge */}
-        <div className="absolute top-2 left-2 bg-[#070709]/85 backdrop-blur-sm border border-[#262633] px-2 py-0.5 rounded text-[11px] font-extrabold tracking-wide text-[#c9a227]">
+        <div className="absolute top-2 left-2 bg-[#0c0c10]/95 border border-[#262633] px-2 py-0.5 rounded text-[11px] font-extrabold tracking-wide text-[#c9a227]">
           #{String(lord.id).padStart(3, '0')} &middot; Era {lord.era}
         </div>
 
         {/* BTD6 Medals Rack on Portrait */}
-        <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-[#070709]/85 backdrop-blur-sm px-2 py-1 rounded-md border border-[#262633]/60 text-xs shadow-md">
+        <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-[#0c0c10]/95 px-2 py-1 rounded-md border border-[#262633]/60 text-xs shadow-md">
           {progress.short && <span title="Vitória Curta (Bronze)">🥉</span>}
           {progress.long && <span title="Vitória Longa (Prata)">🥈</span>}
           {progress.crisis && <span title="Crise Final / Dominação (Ouro)">🥇</span>}
@@ -166,4 +166,6 @@ export const LordCard: React.FC<LordCardProps> = ({ lord, onOpenModal }) => {
       </div>
     </div>
   );
-};
+});
+
+LordCard.displayName = 'LordCard';

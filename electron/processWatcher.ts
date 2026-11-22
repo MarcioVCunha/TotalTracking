@@ -7,10 +7,10 @@ export class ProcessWatcher {
   private timer: NodeJS.Timeout | null = null;
   private isGameRunning = false;
   private listeners: ((running: boolean) => void)[] = [];
-  private pollIntervalMs = 3000;
+  private pollIntervalMs = 4000;
   private targetProcess = 'Warhammer3.exe';
 
-  constructor(targetProcess = 'Warhammer3.exe', pollIntervalMs = 3000) {
+  constructor(targetProcess = 'Warhammer3.exe', pollIntervalMs = 4000) {
     this.targetProcess = targetProcess;
     this.pollIntervalMs = pollIntervalMs;
   }

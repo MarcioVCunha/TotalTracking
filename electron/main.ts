@@ -39,7 +39,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
-const processWatcher = new ProcessWatcher('Warhammer3.exe', 3000);
+const processWatcher = new ProcessWatcher('Warhammer3.exe', 4000);
 const saveWatcher = new SaveWatcher();
 const replayInspector = new ReplayInspector();
 

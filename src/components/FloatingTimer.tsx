@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Pause, Settings2, Swords, Sparkles, Trophy } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { LORDS_DATA } from '../data/lords';
@@ -10,8 +10,25 @@ interface FloatingTimerProps {
 }
 
 export const FloatingTimer: React.FC<FloatingTimerProps> = ({ onOpenModal }) => {
-  const { activeSession, activeSeconds, stopActiveSession, lastDetectedSave } = useApp();
+  const { activeSession, stopActiveSession, lastDetectedSave } = useApp();
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
+  const [localSeconds, setLocalSeconds] = useState<number>(() => {
+    return activeSession ? Math.max(0, Math.floor((Date.now() - activeSession.startedAt) / 1000)) : 0;
+  });
+
+  // Isolated local interval - ONLY FloatingTimer re-renders every 1s, saving massive CPU
+  useEffect(() => {
+    if (!activeSession) {
+      setLocalSeconds(0);
+      return;
+    }
+    const updateElapsed = () => {
+      setLocalSeconds(Math.max(0, Math.floor((Date.now() - activeSession.startedAt) / 1000)));
+    };
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 1000);
+    return () => clearInterval(interval);
+  }, [activeSession?.startedAt, activeSession?.lordId]);
 
   if (!activeSession) return null;
 
@@ -22,11 +39,11 @@ export const FloatingTimer: React.FC<FloatingTimerProps> = ({ onOpenModal }) => 
     <>
       <aside
         aria-label="Sessão ativa"
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[min(94vw,920px)] bg-[#13131a]/95 backdrop-blur-xl border border-[#c9a227] rounded-2xl px-5 py-3.5 shadow-2xl shadow-black/80 flex items-center justify-between gap-4 z-40 animate-in fade-in slide-in-from-bottom-4 duration-200"
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[min(94vw,920px)] bg-[#13131a]/98 border border-[#c9a227] rounded-2xl px-5 py-3.5 shadow-2xl shadow-black/80 flex items-center justify-between gap-4 z-40 animate-in fade-in slide-in-from-bottom-4 duration-200"
       >
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-[#c9a227]/10 border border-[#c9a227]/40 flex items-center justify-center shrink-0">
-            <Swords className="w-5 h-5 text-[#c9a227] animate-pulse" />
+            <Swords className="w-5 h-5 text-[#c9a227]" />
           </div>
           <div className="min-w-0">
             <div className="text-[10px] uppercase font-bold tracking-wider text-[#9494a8] flex items-center gap-2">
@@ -47,7 +64,7 @@ export const FloatingTimer: React.FC<FloatingTimerProps> = ({ onOpenModal }) => 
 
         {/* Stopwatch Digits */}
         <div className="font-mono-numbers text-2xl font-black text-emerald-400 tracking-wider drop-shadow-md">
-          {formatHMS(activeSeconds)}
+          {formatHMS(localSeconds)}
         </div>
 
         {/* Actions */}

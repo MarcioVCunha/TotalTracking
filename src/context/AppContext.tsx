@@ -282,7 +282,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isStorageLoaded, setIsStorageLoaded] = useState<boolean>(false);
   const [isGameRunning, setIsGameRunning] = useState<boolean>(false);
-  const [activeSeconds, setActiveSeconds] = useState<number>(0);
   const [lastDetectedSave, setLastDetectedSave] = useState<SaveDetectionPayload | null>(null);
 
   // Auto-heal / Recover from storage.json file backup if needed
@@ -380,20 +379,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isStorageLoaded, lordsProgress, runs, sessions, activeSession, settings, portraitsCache]);
 
-  // Live timer tick
-  useEffect(() => {
-    if (!activeSession) {
-      setActiveSeconds(0);
-      return;
-    }
-    const updateElapsed = () => {
-      const elapsed = Math.floor((Date.now() - activeSession.startedAt) / 1000);
-      setActiveSeconds(Math.max(0, elapsed));
-    };
-    updateElapsed();
-    const interval = setInterval(updateElapsed, 1000);
-    return () => clearInterval(interval);
+  // Live timer calculation without global context thrashing
+  const getActiveElapsedSeconds = useCallback((): number => {
+    if (!activeSession) return 0;
+    return Math.max(0, Math.floor((Date.now() - activeSession.startedAt) / 1000));
   }, [activeSession]);
+
+  const activeSeconds = activeSession ? Math.max(0, Math.floor((Date.now() - activeSession.startedAt) / 1000)) : 0;
 
   // Stop active session helper
   const stopActiveSession = useCallback((turnReached?: number) => {
@@ -733,14 +725,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .filter(s => Number(s.lordId) === targetId)
         .reduce((sum, s) => sum + (Number(s.durationSeconds) || 0), 0);
       if (activeSession && Number(activeSession.lordId) === targetId) {
-        sessionTotal += activeSeconds;
+        sessionTotal += Math.max(0, Math.floor((Date.now() - activeSession.startedAt) / 1000));
       }
       const runsTotal = runs
         .filter(r => Number(r.lordId) === targetId)
         .reduce((sum, r) => sum + (Number(r.totalSeconds) || 0), 0);
       return Math.max(sessionTotal, runsTotal);
     },
-    [sessions, activeSession, activeSeconds, runs]
+    [sessions, activeSession, runs]
   );
 
   const getCampaignAutoDetails = useCallback(
@@ -787,7 +779,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const lordSessionSec = sessions
         .filter(s => Number(s.lordId) === targetId)
         .reduce((sum, s) => sum + (Number(s.durationSeconds) || 0), 0);
-      const currentActive = (activeSession && Number(activeSession.lordId) === targetId) ? activeSeconds : 0;
+      const currentActive = (activeSession && Number(activeSession.lordId) === targetId)
+        ? Math.max(0, Math.floor((Date.now() - activeSession.startedAt) / 1000))
+        : 0;
       const totalAvailable = lordSessionSec + currentActive;
       const unallocated = totalAvailable - allocated;
       const totalSeconds = unallocated > 0 ? unallocated : totalAvailable;
@@ -805,7 +799,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         suggestedMedal: (lastDetectedSave?.lordId === targetId && lastDetectedSave.medalSuggestion) || 'short',
       };
     },
-    [lastDetectedSave, settings.savesPath, runs, sessions, activeSession, activeSeconds]
+    [lastDetectedSave, settings.savesPath, runs, sessions, activeSession]
   );
 
   const finishCampaign = useCallback(
