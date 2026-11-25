@@ -129,12 +129,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
               <div className="border-t border-[#1b1b24]" />
 
-              {/* Desktop Shortcut Action */}
+              {/* Desktop & Start Menu Shortcut Action */}
               <div className="flex items-center justify-between pt-1">
                 <div>
-                  <div className="font-semibold text-white">Atalho na Área de Trabalho</div>
+                  <div className="font-semibold text-white">Atalhos no Menu Iniciar &amp; Área de Trabalho</div>
                   <div className="text-[#9494a8] text-[11px]">
-                    Cria ou recria o atalho oficial do Total Tracking no seu Desktop do Windows.
+                    Cria ou recria os atalhos oficiais do Total Tracking no Menu Iniciar e no Desktop do Windows.
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -143,7 +143,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                     onClick={handleCreateShortcut}
                     className="px-3 py-1.5 bg-[#1b1b24] hover:bg-[#262633] text-white font-bold text-xs rounded-lg border border-[#3b3b4f] transition-colors"
                   >
-                    Criar Atalho
+                    Criar Atalhos
                   </button>
                   {shortcutFeedback && (
                     <span className="text-[11px] text-emerald-400 font-semibold">{shortcutFeedback}</span>

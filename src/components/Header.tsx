@@ -1,10 +1,10 @@
 import React, { useRef } from 'react';
-import { Swords, Shield, BarChart3, Film, Settings, Cloud, CheckCircle2, AlertCircle, Upload, Download, Clock } from 'lucide-react';
+import { Swords, Shield, BarChart3, Dices, Settings, Cloud, Upload, Download, Clock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 interface HeaderProps {
-  currentTab: 'lords' | 'stats' | 'replays';
-  setCurrentTab: (tab: 'lords' | 'stats' | 'replays') => void;
+  currentTab: 'lords' | 'stats' | 'roulette';
+  setCurrentTab: (tab: 'lords' | 'stats' | 'roulette') => void;
   onOpenSettings: () => void;
   onOpenSessions: () => void;
 }
@@ -15,7 +15,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenSessions,
 }) => {
-  const { isGameRunning, settings, triggerCloudSync, exportBackupJson, importBackupJson } = useApp();
+  const { isGameRunning, triggerCloudSync, exportBackupJson, importBackupJson } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [syncing, setSyncing] = React.useState(false);
 
@@ -98,15 +98,15 @@ export const Header: React.FC<HeaderProps> = ({
             Estatísticas & Ludohall
           </button>
           <button
-            onClick={() => setCurrentTab('replays')}
+            onClick={() => setCurrentTab('roulette')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              currentTab === 'replays'
+              currentTab === 'roulette'
                 ? 'bg-[#1b1b24] text-white shadow-md shadow-black/50 border border-[#3b3b4f]'
                 : 'text-[#9494a8] hover:text-white'
             }`}
           >
-            <Film className="w-4 h-4 text-[#a855f7]" />
-            Replays de Batalha
+            <Dices className="w-4 h-4 text-[#a855f7]" />
+            Sortear Lorde
           </button>
         </nav>
 

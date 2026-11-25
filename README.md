@@ -59,10 +59,6 @@ O executável de instalação (`.exe`) será gerado na pasta `total-tracking\rel
   - Restaurar janela / Minimizar para a bandeja
   - Encerrar completamente
 
-### D. Inspetor de Replays de Batalha
-- Lê os arquivos `.replay` salvos pelo jogo em `%APPDATA%\The Creative Assembly\Warhammer3\(EOS\)?replays`.
-- Exibe data, tamanho do arquivo e fornece checklist de auditoria tática para validação de **Borda Preta** (Zero Autoresolve, Sem reload em derrota).
-
 ---
 
 ## 🛡️ Sistema de Medalhas & Bordas (Estilo Bloons TD 6)

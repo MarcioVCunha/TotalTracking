@@ -4,7 +4,7 @@ import { Lord } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatDurationHuman } from '../lib/timeUtils';
 import { FACTIONS_META } from '../data/factions';
-import { DEFAULT_PORTRAITS, WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
+import { WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
 
 interface LordCardProps {
   lord: Lord;
@@ -18,7 +18,6 @@ export const LordCard = React.memo<LordCardProps>(({ lord, onOpenModal }) => {
     activeSession,
     togglePlaySession,
     getLordTotalSeconds,
-    portraitsCache,
   } = useApp();
 
   const progress = lordsProgress[lord.id] || { short: false, long: false, crisis: false, black: false };
@@ -140,7 +139,8 @@ export const LordCard = React.memo<LordCardProps>(({ lord, onOpenModal }) => {
 
           {/* Quick Play/Pause Button */}
           <button
-            onClick={(e) => {
+            type="button"
+            onClick={e => {
               e.stopPropagation();
               togglePlaySession(lord.id);
             }}

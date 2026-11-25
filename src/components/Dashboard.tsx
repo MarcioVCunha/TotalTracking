@@ -401,7 +401,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenSessions }) => {
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
           {eraStats.map(era => {
-            const pct = Math.round((era.completed / era.total) * 100);
+            const pct = era.total > 0 ? Math.round((era.completed / era.total) * 100) : 0;
             return (
               <div key={era.era} className="bg-[#0e0e12] p-4 rounded-xl border border-[#262633] shadow-md">
                 <div className="flex items-center justify-between">

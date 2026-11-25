@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, Trophy, Plus, Trash2, Clock, Calendar, CheckCircle2, Skull, Hourglass, Pencil, Check } from 'lucide-react';
+import { X, ExternalLink, Trophy, Plus, Trash2, Clock, CheckCircle2, Skull, Hourglass, Pencil, Check } from 'lucide-react';
 import { Lord, CampaignRun, GameDifficulty, RunStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatHMS, formatDurationHuman, toUtcDateKey } from '../lib/timeUtils';
 import { FACTIONS_META } from '../data/factions';
-import { DEFAULT_PORTRAITS, WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
+import { WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
 import { LORDS_DATA } from '../data/lords';
 
 interface LordModalProps {
@@ -23,11 +23,9 @@ export const LordModal: React.FC<LordModalProps> = ({ lord, onClose }) => {
     addRun,
     updateRun,
     deleteRun,
-    finishCampaign,
     getCampaignAutoDetails,
     setLordCustomImage,
     getLordTotalSeconds,
-    portraitsCache,
   } = useApp();
 
   const progress = lordsProgress[lord.id] || { short: false, long: false, crisis: false, black: false };

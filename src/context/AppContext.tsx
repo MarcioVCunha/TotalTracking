@@ -4,6 +4,8 @@ import {
   CampaignRun,
   PlaySession,
   ActiveSession,
+  RouletteState,
+  RouletteMedalFilter,
   AppSettings,
   SaveDetectionPayload,
   Lord,
@@ -14,8 +16,75 @@ import { LORDS_DATA } from '../data/lords';
 import { getSupabaseClient, syncWithSupabase } from '../lib/supabase';
 import { calculateCalendarDays, getCampaignStartDate } from '../lib/timeUtils';
 
+export function doesLordMatchMedalFilter(
+  p: LordProgress | undefined,
+  medalFilter: RouletteMedalFilter
+): boolean {
+  const short = Boolean(p?.short);
+  const long = Boolean(p?.long);
+  const crisis = Boolean(p?.crisis);
+  const black = Boolean(p?.black);
+
+  switch (medalFilter) {
+    case 'unplayed_victory':
+      return !short && !long && !crisis && !black;
+    case 'missing_short':
+      return !short;
+    case 'missing_long':
+      return !long;
+    case 'missing_crisis':
+      return !crisis;
+    case 'missing_black':
+      return !black;
+    case 'missing_any':
+      return !(short && long && crisis && black);
+    case 'all':
+    default:
+      return true;
+  }
+}
+
+function pickRandomEligibleLord(
+  factions: string[],
+  medalFilter: RouletteMedalFilter,
+  progressMap: Record<number, LordProgress>,
+  excludeLordId?: number
+): Lord | null {
+  const eligible = LORDS_DATA.filter(l => {
+    if (factions.length > 0 && !factions.includes(l.faction)) {
+      return false;
+    }
+    return doesLordMatchMedalFilter(progressMap[l.id], medalFilter);
+  });
+
+  if (eligible.length === 0) return null;
+
+  const pool =
+    excludeLordId && eligible.length > 1
+      ? eligible.filter(l => l.id !== excludeLordId)
+      : eligible;
+
+  let idx = 0;
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    idx = buf[0] % pool.length;
+  } else {
+    idx = Math.floor(Math.random() * pool.length);
+  }
+  return pool[idx];
+}
+
+const DEFAULT_ROULETTE_STATE: RouletteState = {
+  selectedFactions: [],
+  medalFilter: 'unplayed_victory',
+  currentLordId: null,
+  lastOutcomeBanner: null,
+};
+
 interface AppContextType {
   lordsProgress: Record<number, LordProgress>;
+  rouletteState: RouletteState;
   runs: CampaignRun[];
   sessions: PlaySession[];
   activeSession: ActiveSession | null;
@@ -27,6 +96,9 @@ interface AppContextType {
   
   // Actions
   toggleMedal: (lordId: number, medal: 'short' | 'long' | 'crisis' | 'black') => void;
+  updateRouletteFilters: (updates: Partial<Pick<RouletteState, 'selectedFactions' | 'medalFilter'>>) => void;
+  drawRandomLord: (excludeCurrent?: boolean) => Lord | null;
+  dismissRouletteBanner: () => void;
   togglePlaySession: (lordId: number) => void;
   stopActiveSession: (turnReached?: number) => void;
   updateSession: (sessionId: string, updates: Partial<PlaySession>) => void;
@@ -70,7 +142,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoPlayEnabled: true,
   minimizeToTray: true,
   savesPath: '',
-  replaysPath: '',
   supabaseUrl: '',
   supabaseAnonKey: '',
   syncEnabled: false,
@@ -226,15 +297,27 @@ function getInitialState(): any {
       autoPlayEnabled: rawSettings.autoPlayEnabled ?? true,
       minimizeToTray: rawSettings.minimizeToTray ?? true,
       savesPath: rawSettings.savesPath || '',
-      replaysPath: rawSettings.replaysPath || '',
       supabaseUrl: rawSettings.supabaseUrl || '',
       supabaseAnonKey: rawSettings.supabaseAnonKey || '',
       syncEnabled: rawSettings.syncEnabled ?? false,
       lastSyncedAt: rawSettings.lastSyncedAt,
     };
 
+    const rawRoulette = parsedV2?.rouletteState || DEFAULT_ROULETTE_STATE;
+    const resolvedMedalFilter: RouletteMedalFilter =
+      rawRoulette.medalFilter ||
+      (rawRoulette.includeCompleted ? 'all' : 'unplayed_victory');
+    const cleanRoulette: RouletteState = {
+      selectedFactions: Array.isArray(rawRoulette.selectedFactions) ? rawRoulette.selectedFactions : [],
+      medalFilter: resolvedMedalFilter,
+      currentLordId: rawRoulette.currentLordId ? Number(rawRoulette.currentLordId) : null,
+      drawnAt: rawRoulette.drawnAt ? Number(rawRoulette.drawnAt) : undefined,
+      lastOutcomeBanner: rawRoulette.lastOutcomeBanner || null,
+    };
+
     return {
       lordsProgress: finalLordsProgress,
+      rouletteState: cleanRoulette,
       runs: finalRuns,
       sessions: finalSessions,
       activeSession: finalActiveSession,
@@ -246,6 +329,7 @@ function getInitialState(): any {
   }
 
   return {
+    rouletteState: { ...DEFAULT_ROULETTE_STATE },
     portraitsCache: { ...DEFAULT_PORTRAITS },
   };
 }
@@ -258,6 +342,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Load persisted state
   const [lordsProgress, setLordsProgress] = useState<Record<number, LordProgress>>(() => {
     return INITIAL_DATA.lordsProgress || {};
+  });
+
+  const [rouletteState, setRouletteState] = useState<RouletteState>(() => {
+    return INITIAL_DATA.rouletteState || { ...DEFAULT_ROULETTE_STATE };
   });
 
   const [runs, setRuns] = useState<CampaignRun[]>(() => {
@@ -314,6 +402,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               });
             }
 
+            if (fileData.rouletteState) {
+              setRouletteState(curr =>
+                curr.currentLordId !== null
+                  ? curr
+                  : {
+                      selectedFactions: Array.isArray(fileData.rouletteState.selectedFactions)
+                        ? fileData.rouletteState.selectedFactions
+                        : curr.selectedFactions,
+                      medalFilter:
+                        fileData.rouletteState.medalFilter ||
+                        (fileData.rouletteState.includeCompleted ? 'all' : curr.medalFilter),
+                      currentLordId: fileData.rouletteState.currentLordId
+                        ? Number(fileData.rouletteState.currentLordId)
+                        : null,
+                      drawnAt: fileData.rouletteState.drawnAt,
+                      lastOutcomeBanner: fileData.rouletteState.lastOutcomeBanner || null,
+                    }
+              );
+            }
+
             if (fileData.runs && fileData.runs.length > 0) {
               setRuns(curr => {
                 const map = new Map<string, CampaignRun>();
@@ -362,6 +470,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const stateObj = {
         lordsProgress,
+        rouletteState,
         runs,
         sessions,
         activeSession,
@@ -377,7 +486,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.error('Failed to save state to localStorage', err);
     }
-  }, [isStorageLoaded, lordsProgress, runs, sessions, activeSession, settings, portraitsCache]);
+  }, [isStorageLoaded, lordsProgress, rouletteState, runs, sessions, activeSession, settings, portraitsCache]);
 
   // Live timer calculation without global context thrashing
   const getActiveElapsedSeconds = useCallback((): number => {
@@ -575,6 +684,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
+  // Roulette Actions (Sortear Lorde)
+  const updateRouletteFilters = useCallback(
+    (updates: Partial<Pick<RouletteState, 'selectedFactions' | 'medalFilter'>>) => {
+      setRouletteState(prev => ({
+        ...prev,
+        ...updates,
+      }));
+    },
+    []
+  );
+
+  const dismissRouletteBanner = useCallback(() => {
+    setRouletteState(prev => ({ ...prev, lastOutcomeBanner: null }));
+  }, []);
+
+  const drawRandomLord = useCallback(
+    (excludeCurrent = true): Lord | null => {
+      const chosen = pickRandomEligibleLord(
+        rouletteState.selectedFactions,
+        rouletteState.medalFilter,
+        lordsProgress,
+        excludeCurrent && rouletteState.currentLordId ? rouletteState.currentLordId : undefined
+      );
+      setRouletteState(prev => ({
+        ...prev,
+        currentLordId: chosen ? chosen.id : null,
+        drawnAt: Date.now(),
+        lastOutcomeBanner: null,
+      }));
+      return chosen;
+    },
+    [rouletteState.selectedFactions, rouletteState.medalFilter, rouletteState.currentLordId, lordsProgress]
+  );
+
+  const autoAdvanceRouletteOnFinish = useCallback(
+    (
+      finishedLordId: number,
+      outcome: 'victory' | 'defeat',
+      nextLordProgressOverride?: LordProgress
+    ) => {
+      const prevLord = LORDS_DATA.find(l => l.id === finishedLordId);
+      const effectiveProgressMap: Record<number, LordProgress> = nextLordProgressOverride
+        ? { ...lordsProgress, [finishedLordId]: nextLordProgressOverride }
+        : lordsProgress;
+
+      setRouletteState(prev => {
+        const nextLord = pickRandomEligibleLord(
+          prev.selectedFactions,
+          prev.medalFilter,
+          effectiveProgressMap,
+          finishedLordId
+        );
+        return {
+          ...prev,
+          currentLordId: nextLord ? nextLord.id : null,
+          drawnAt: Date.now(),
+          lastOutcomeBanner: prevLord
+            ? {
+                previousLordName: prevLord.name,
+                outcome,
+                timestamp: Date.now(),
+              }
+            : null,
+        };
+      });
+    },
+    [lordsProgress]
+  );
+
   // Add a new Run
   const addRun = useCallback((lordId: number, runData: Partial<CampaignRun>) => {
     const targetId = Number(lordId);
@@ -635,43 +813,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRuns(prev => [newRun, ...prev]);
 
     // If victory, auto-grant Short Victory medal if not yet granted
+    let updatedProg: LordProgress | undefined;
     if (newRun.status === 'victory') {
-      setLordsProgress(prev => {
-        const cur = prev[targetId] || { short: false, long: false, crisis: false, black: false };
-        return {
-          ...prev,
-          [targetId]: {
-            ...cur,
-            short: true,
-            black: newRun.isBlackBorderEligible ? true : cur.black,
-          },
-        };
-      });
+      const cur = lordsProgress[targetId] || { short: false, long: false, crisis: false, black: false };
+      updatedProg = {
+        ...cur,
+        short: true,
+        black: newRun.isBlackBorderEligible ? true : cur.black,
+      };
+      setLordsProgress(prev => ({
+        ...prev,
+        [targetId]: updatedProg!,
+      }));
     }
-  }, [activeSession, runs, sessions]);
+
+    // Auto-draw next Lord whenever a campaign is won or lost
+    if (newRun.status === 'victory' || newRun.status === 'defeat') {
+      autoAdvanceRouletteOnFinish(targetId, newRun.status, updatedProg);
+    }
+  }, [activeSession, runs, sessions, lordsProgress, autoAdvanceRouletteOnFinish]);
 
   const updateRun = useCallback((runId: string, updates: Partial<CampaignRun>) => {
+    const existing = runs.find(r => r.id === runId);
+    let updatedProg: LordProgress | undefined;
+    if (existing && updates.status === 'victory') {
+      const cur = lordsProgress[existing.lordId] || { short: false, long: false, crisis: false, black: false };
+      updatedProg = {
+        ...cur,
+        short: true,
+        black: updates.isBlackBorderEligible !== undefined ? updates.isBlackBorderEligible : cur.black,
+      };
+    }
+
     setRuns(prev =>
       prev.map(r => {
         if (r.id !== runId) return r;
         const updated = { ...r, ...updates };
-        if (updates.status === 'victory') {
-          setLordsProgress(lp => {
-            const cur = lp[r.lordId] || { short: false, long: false, crisis: false, black: false };
-            return {
-              ...lp,
-              [r.lordId]: {
-                ...cur,
-                short: true,
-                black: updates.isBlackBorderEligible !== undefined ? updates.isBlackBorderEligible : cur.black,
-              },
-            };
-          });
+        if (updates.status === 'victory' && updatedProg) {
+          setLordsProgress(lp => ({
+            ...lp,
+            [r.lordId]: updatedProg!,
+          }));
         }
         return updated;
       })
     );
-  }, []);
+
+    if (
+      existing &&
+      existing.status === 'in_progress' &&
+      (updates.status === 'victory' || updates.status === 'defeat')
+    ) {
+      autoAdvanceRouletteOnFinish(existing.lordId, updates.status, updatedProg);
+    }
+  }, [runs, lordsProgress, autoAdvanceRouletteOnFinish]);
 
   const deleteRun = useCallback((runId: string) => {
     setRuns(prev => prev.filter(r => r.id !== runId));
@@ -909,23 +1104,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // 6. If victory, award medals
+      let updatedProg: LordProgress | undefined;
       if (status === 'victory') {
         const medalKey = data?.medal || 'short';
-        setLordsProgress(prev => {
-          const cur = prev[targetId] || { short: false, long: false, crisis: false, black: false };
-          return {
-            ...prev,
-            [targetId]: {
-              ...cur,
-              [medalKey]: true,
-              short: true,
-              black: isBlackBorder ? true : cur.black,
-            },
-          };
-        });
+        const cur = lordsProgress[targetId] || { short: false, long: false, crisis: false, black: false };
+        updatedProg = {
+          ...cur,
+          [medalKey]: true,
+          short: true,
+          black: isBlackBorder ? true : cur.black,
+        };
+        setLordsProgress(prev => ({
+          ...prev,
+          [targetId]: updatedProg!,
+        }));
+      }
+
+      // 7. Auto-draw next Lord whenever a campaign is won or lost
+      if (status === 'victory' || status === 'defeat') {
+        autoAdvanceRouletteOnFinish(targetId, status, updatedProg);
       }
     },
-    [activeSession, runs, sessions, lastDetectedSave]
+    [activeSession, runs, sessions, lastDetectedSave, lordsProgress, autoAdvanceRouletteOnFinish]
   );
 
   const getLordActiveRun = useCallback(
@@ -943,6 +1143,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         version: '1.0',
         exportedAt: new Date().toISOString(),
         lordsProgress,
+        rouletteState,
         runs,
         sessions,
         settings,
@@ -951,12 +1152,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       null,
       2
     );
-  }, [lordsProgress, runs, sessions, settings, portraitsCache]);
+  }, [lordsProgress, rouletteState, runs, sessions, settings, portraitsCache]);
 
   const importBackupJson = useCallback((jsonStr: string): boolean => {
     try {
       const data = JSON.parse(jsonStr);
       if (data.lordsProgress) setLordsProgress(data.lordsProgress);
+      if (data.rouletteState) setRouletteState(prev => ({ ...prev, ...data.rouletteState }));
       if (data.runs) setRuns(data.runs);
       if (data.sessions) setSessions(data.sessions);
       if (data.settings) setSettings(prev => ({ ...prev, ...data.settings }));
@@ -989,6 +1191,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider
       value={{
         lordsProgress,
+        rouletteState,
         runs,
         sessions,
         activeSession,
@@ -998,6 +1201,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         portraitsCache,
         lastDetectedSave,
         toggleMedal,
+        updateRouletteFilters,
+        drawRandomLord,
+        dismissRouletteBanner,
         togglePlaySession,
         stopActiveSession,
         updateSession,

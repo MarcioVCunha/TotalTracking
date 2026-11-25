@@ -7,17 +7,11 @@ import {
   Skull,
   Clock,
   Calendar,
-  Shield,
-  Swords,
-  Award,
-  Layers,
-  ChevronRight,
 } from 'lucide-react';
 import { Lord, RunStatus, GameDifficulty } from '../types';
 import { useApp } from '../context/AppContext';
-import { formatHMS, formatDurationHuman } from '../lib/timeUtils';
-import { FACTIONS_META } from '../data/factions';
-import { DEFAULT_PORTRAITS, WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
+import { formatDurationHuman } from '../lib/timeUtils';
+import { WIKI_PORTRAITS, getLordPortrait } from '../data/portraits';
 
 interface FinishCampaignModalProps {
   lord: Lord;
@@ -27,17 +21,14 @@ interface FinishCampaignModalProps {
 export const FinishCampaignModal: React.FC<FinishCampaignModalProps> = ({ lord, onClose }) => {
   const {
     lordsProgress,
-    portraitsCache,
     getCampaignAutoDetails,
     finishCampaign,
     activeSeconds,
   } = useApp();
 
   const progress = lordsProgress[lord.id] || { short: false, long: false, crisis: false, black: false };
-  const factionMeta = FACTIONS_META[lord.faction];
   const primaryPortrait = getLordPortrait(lord.id, progress.customImg);
   const [imgSrc, setImgSrc] = useState<string>(primaryPortrait);
-  const [loading, setLoading] = useState(true);
 
   // Form State
   const [status, setStatus] = useState<RunStatus>('victory');
@@ -84,8 +75,6 @@ export const FinishCampaignModal: React.FC<FinishCampaignModalProps> = ({ lord, 
       } else {
         setMedal('crisis');
       }
-
-      setLoading(false);
     });
 
     return () => {

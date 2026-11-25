@@ -57,6 +57,28 @@ export interface ActiveSession {
   runId?: string;
 }
 
+export type RouletteMedalFilter =
+  | 'unplayed_victory' // 0/4 medals (nenhuma medalha ainda)
+  | 'missing_short'    // faltando Vitória Curta
+  | 'missing_long'     // faltando Vitória Longa
+  | 'missing_crisis'   // faltando Crise Final
+  | 'missing_black'    // faltando Borda Preta
+  | 'missing_any'      // faltando qualquer uma das 4 (< 4/4)
+  | 'all';             // todos os lordes (mesmo 4/4)
+
+export interface RouletteState {
+  selectedFactions: string[]; // empty = all factions
+  medalFilter: RouletteMedalFilter;
+  includeCompleted?: boolean; // legacy compat
+  currentLordId: number | null;
+  drawnAt?: number;
+  lastOutcomeBanner?: {
+    previousLordName: string;
+    outcome: 'victory' | 'defeat';
+    timestamp: number;
+  } | null;
+}
+
 export interface FactionStats {
   faction: string;
   race: string;
@@ -73,7 +95,6 @@ export interface AppSettings {
   autoPlayEnabled: boolean;
   minimizeToTray: boolean;
   savesPath: string;
-  replaysPath: string;
   supabaseUrl: string;
   supabaseAnonKey: string;
   syncEnabled: boolean;
@@ -91,25 +112,11 @@ export interface SaveDetectionPayload {
   modifiedAt: number;
 }
 
-export interface ReplayItem {
-  fileName: string;
-  filePath: string;
-  sizeBytes: number;
-  modifiedAt: string;
-  settlement?: string;
-  playerFaction?: string;
-  enemyFaction?: string;
-  playerLord?: string;
-  detectedUnits?: string[];
-  battleType?: string;
-}
-
 export interface ElectronAPI {
   getProcessStatus: () => Promise<boolean>;
   onProcessStatusChange: (callback: (running: boolean) => void) => () => void;
   onSaveDetected: (callback: (payload: SaveDetectionPayload) => void) => () => void;
   getSavesList: (customPath?: string) => Promise<SaveDetectionPayload[]>;
-  getReplaysList: (customPath?: string) => Promise<ReplayItem[]>;
   browseFolder: () => Promise<string | null>;
   createDesktopShortcut: () => Promise<{ success: boolean; message: string }>;
   loadStorageFile: () => Promise<string | null>;

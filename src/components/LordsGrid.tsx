@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, ArrowUpDown } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { LORDS_DATA } from '../data/lords';
 import { LordCard } from './LordCard';
 import { useApp } from '../context/AppContext';
@@ -75,7 +75,7 @@ export const LordsGrid: React.FC<LordsGridProps> = ({ onOpenModal }) => {
       if (sortBy === 'name') {
         return a.name.localeCompare(b.name);
       }
-      return a.id - b.id; // chronological
+      return a.id - b.id; // chronological (#1-110)
     });
   }, [search, eraFilter, waveFilter, statusFilter, factionFilter, sortBy, lordsProgress, runs, activeSession, getLordTotalSeconds]);
 

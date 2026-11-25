@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { SaveDetectionPayload, ReplayItem } from './types';
+import { SaveDetectionPayload } from './types';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getProcessStatus: () => ipcRenderer.invoke('get-process-status'),
@@ -18,7 +18,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
   getSavesList: (customPath?: string) => ipcRenderer.invoke('get-saves-list', customPath),
-  getReplaysList: (customPath?: string) => ipcRenderer.invoke('get-replays-list', customPath),
   browseFolder: () => ipcRenderer.invoke('browse-folder'),
   createDesktopShortcut: () => ipcRenderer.invoke('create-desktop-shortcut'),
   loadStorageFile: () => ipcRenderer.invoke('load-storage-file'),

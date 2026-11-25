@@ -1,9 +1,12 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, session } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, session, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { ProcessWatcher } from './processWatcher';
 import { SaveWatcher } from './saveWatcher';
-import { ReplayInspector } from './replayInspector';
+
+// Prevent Chromium renderer sandbox crash on Windows 11 24H2+ (ERR_FAILED -2 black screen)
+app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-gpu-sandbox');
 
 // Ensure consistent userData path across development and production
 const appDataEnv = process.env.APPDATA || '';
@@ -41,7 +44,6 @@ let isQuitting = false;
 
 const processWatcher = new ProcessWatcher('Warhammer3.exe', 4000);
 const saveWatcher = new SaveWatcher();
-const replayInspector = new ReplayInspector();
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 
@@ -55,16 +57,29 @@ async function loadApp(window: BrowserWindow) {
     }
   }
 
-  const distPath = path.join(__dirname, '../dist/index.html');
-  try {
-    await window.loadFile(distPath);
-  } catch (err) {
-    const fallback = path.join(app.getAppPath(), 'dist', 'index.html');
-    await window.loadFile(fallback);
+  const candidates = [
+    path.join(__dirname, '..', 'dist', 'index.html'),
+    path.join(app.getAppPath(), 'dist', 'index.html'),
+  ];
+
+  let lastErr: unknown = null;
+  for (const htmlPath of candidates) {
+    try {
+      await window.loadFile(htmlPath);
+      window.show();
+      window.focus();
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
   }
 
-  window.show();
-  window.focus();
+  if (lastErr) {
+    try {
+      const logPath = path.join(app.getPath('userData'), 'crash.log');
+      fs.appendFileSync(logPath, `[${new Date().toISOString()}] loadApp error: ${lastErr}\n`);
+    } catch {}
+  }
 }
 
 function shouldMinimizeToTray(): boolean {
@@ -96,6 +111,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 
@@ -200,9 +216,52 @@ app.on('second-instance', () => {
   }
 });
 
+function writeWindowsShortcut(shortcutPath: string): boolean {
+  if (process.platform !== 'win32') return false;
+  try {
+    const exePath = app.getPath('exe');
+    const workDir = path.dirname(exePath);
+    const icoCandidate = path.join(__dirname, 'assets', 'icon.ico');
+    const iconTarget = !app.isPackaged && fs.existsSync(icoCandidate) ? icoCandidate : exePath;
+
+    const dir = path.dirname(shortcutPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    return shell.writeShortcutLink(shortcutPath, {
+      target: exePath,
+      cwd: workDir,
+      description: 'Total Tracking — Companion de Total War: WARHAMMER III',
+      appUserModelId: 'com.totaltracking.app',
+      icon: iconTarget,
+      iconIndex: 0,
+    });
+  } catch (err) {
+    console.warn('Could not write shortcut:', shortcutPath, err);
+    return false;
+  }
+}
+
+function ensureStartMenuShortcut() {
+  if (process.platform !== 'win32' || !app.isPackaged) return;
+  const appData = process.env.APPDATA || '';
+  if (!appData) return;
+  const startMenuShortcut = path.join(
+    appData,
+    'Microsoft',
+    'Windows',
+    'Start Menu',
+    'Programs',
+    'Total Tracking.lnk'
+  );
+  writeWindowsShortcut(startMenuShortcut);
+}
+
 // App lifecycle
 app.whenReady().then(() => {
   app.setAppUserModelId('com.totaltracking.app');
+  ensureStartMenuShortcut();
 
   // Intercept fandom/wikia image requests to attach Referer and bypass 403 Forbidden
   session.defaultSession.webRequest.onBeforeSendHeaders(
@@ -265,10 +324,6 @@ ipcMain.handle('get-saves-list', async (_event, customPath?: string) => {
   return saveWatcher.scanExistingSaves(customPath);
 });
 
-ipcMain.handle('get-replays-list', async (_event, customPath?: string) => {
-  return replayInspector.scanReplays(customPath);
-});
-
 ipcMain.handle('browse-folder', async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -283,14 +338,22 @@ ipcMain.handle('browse-folder', async () => {
 ipcMain.handle('create-desktop-shortcut', async () => {
   try {
     const desktop = path.join(process.env.USERPROFILE || '', 'Desktop', 'Total Tracking.lnk');
-    const exePath = app.getPath('exe');
-    const workDir = path.dirname(exePath);
-    const ps = `$s=(New-Object -ComObject WScript.Shell).CreateShortcut('${desktop}');$s.TargetPath='${exePath}';$s.WorkingDirectory='${workDir}';$s.Save()`;
-    const { exec } = require('child_process');
-    const util = require('util');
-    const execPromise = util.promisify(exec);
-    await execPromise(`powershell -NoProfile -Command "${ps}"`);
-    return { success: true, message: 'Atalho criado na Área de Trabalho com sucesso!' };
+    const startMenu = path.join(
+      process.env.APPDATA || '',
+      'Microsoft',
+      'Windows',
+      'Start Menu',
+      'Programs',
+      'Total Tracking.lnk'
+    );
+
+    const okDesktop = writeWindowsShortcut(desktop);
+    const okStart = writeWindowsShortcut(startMenu);
+
+    if (okDesktop || okStart) {
+      return { success: true, message: 'Atalhos criados no Menu Iniciar e Desktop!' };
+    }
+    return { success: false, message: 'Não foi possível gravar o atalho.' };
   } catch (err: any) {
     return { success: false, message: err?.message || 'Erro ao criar atalho' };
   }

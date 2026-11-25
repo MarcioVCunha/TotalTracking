@@ -3,7 +3,7 @@ import { AppProvider } from './context/AppContext';
 import { Header } from './components/Header';
 import { LordsGrid } from './components/LordsGrid';
 import { Dashboard } from './components/Dashboard';
-import { ReplayViewer } from './components/ReplayViewer';
+import { LordRoulette } from './components/LordRoulette';
 import { FloatingTimer } from './components/FloatingTimer';
 import { LordModal } from './components/LordModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -11,7 +11,7 @@ import { SessionsManagerModal } from './components/SessionsManagerModal';
 import { LORDS_DATA } from './data/lords';
 
 const MainLayout: React.FC = () => {
-  const [currentTab, setCurrentTab] = useState<'lords' | 'stats' | 'replays'>('lords');
+  const [currentTab, setCurrentTab] = useState<'lords' | 'stats' | 'roulette'>('lords');
   const [selectedLordId, setSelectedLordId] = useState<number | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSessionsOpen, setIsSessionsOpen] = useState(false);
@@ -32,7 +32,7 @@ const MainLayout: React.FC = () => {
       <main className="max-w-[1520px] mx-auto w-full px-6 py-6 flex-1">
         {currentTab === 'lords' && <LordsGrid onOpenModal={id => setSelectedLordId(id)} />}
         {currentTab === 'stats' && <Dashboard onOpenSessions={() => setIsSessionsOpen(true)} />}
-        {currentTab === 'replays' && <ReplayViewer />}
+        {currentTab === 'roulette' && <LordRoulette />}
       </main>
 
       {/* Persistent Floating Active Session Timer */}
